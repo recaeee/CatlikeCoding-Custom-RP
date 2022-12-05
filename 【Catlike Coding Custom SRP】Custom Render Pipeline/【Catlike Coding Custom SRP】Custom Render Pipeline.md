@@ -77,6 +77,172 @@ public class CustomRenderPipelineAsset : RenderPipelineAsset
 
 #### 1.3 渲染管线实例 Render Pipeline Instance
 
+在创建好CustomRenderPipelineAsset之后，因为我们在CreatePipeline函数中返回了null，因此当我们创建RenderPipeline的实例的时候会返回null，并没有实际的RenderPipeline产生，所以必然导致了我们的画面是全黑。所以，下一步，我们的目的是让CreatePipeline函数返回正确的RenderPipeline，那我们想返回的RenderPipeline必然是我们自定义的RenderPipeline，因此我们需要定义CustomRenderPipeline，它继承自RenderPipeline，同时我们必须重写其中的Render函数。
+
+```
+using UnityEngine;
+using UnityEngine.Rendering;
+
+public class CustomRenderPipeline : RenderPipeline
+{
+    //必须重写Render函数，目前函数内部什么都不执行
+    protected override void Render(ScriptableRenderContext context, Camera[] cameras)
+    {
+        
+    }
+}
+```
+
+(CustomRenderPipelineAsset那边的修改就不贴上来了，在这里只贴上我认为关键的部分)
+
+#### 2 渲染 Rendering
+
+在RenderPipeline的实例中，Unity每一帧都会执行其Render函数，该函数传入了一个ScriptableRenderContext类型的context用于连接引擎底层，我们用它来实际进行渲染，粗暴来说，每帧内所有渲染相关的信息都存放在context中，同时该函数传入一个摄像机数组，很好理解，意思是我们要在当前帧按顺序渲染这些摄像机拍到的画面。
+
+#### 2.1 摄像机渲染器 Camera Renderer
+
+我们希望每一个摄像机都会以各自的方式去渲染。所以我们不会使用CustomRenderPipeline渲染所有的摄像机，而是定义一个CameraRenderer类用于管理所有摄像机的渲染。
+
+```
+using UnityEngine;
+using UnityEngine.Rendering;
+
+public class CameraRenderer
+{
+    //存放当前渲染上下文
+    private ScriptableRenderContext context;
+
+    //存放摄像机渲染器当前应该渲染的摄像机
+    private Camera camera;
+
+    //摄像机渲染器的渲染函数，在当前渲染上下文的基础上渲染当前摄像机
+    public void Render(ScriptableRenderContext context, Camera camera)
+    {
+        this.context = context;
+        this.camera = camera;
+    }
+}
+```
+
+虽然前面说了希望每个摄像机以各自的方式渲染，但目前看来我们所有摄像机都是以相同的方式渲染(调用CameraRenderer.Render函数)，但是你先别急。
+
+#### 2.2 绘制天空盒 Drawing the Skybox
+
+虽然这一步的标题是“绘制天空盒”，但我们更需要注意的一点是，我们渲染的流程是**将一系列渲染相关的指令缓存到上下文中，再进行提交，以此按顺序执行缓存的指令队列**。
+
+```
+using UnityEngine;
+using UnityEngine.Rendering;
+
+public class CameraRenderer
+{
+    //存放当前渲染上下文
+    private ScriptableRenderContext context;
+
+    //存放摄像机渲染器当前应该渲染的摄像机
+    private Camera camera;
+
+    //摄像机渲染器的渲染函数，在当前渲染上下文的基础上渲染当前摄像机
+    public void Render(ScriptableRenderContext context, Camera camera)
+    {
+        //设定当前上下文和摄像机
+        this.context = context;
+        this.camera = camera;
+        
+        DrawVisibleGeometry();
+        Submit();
+    }
+    
+    void DrawVisibleGeometry()
+    {
+        //添加“绘制天空盒”指令，DrawSkybox为ScriptableRenderContext下已有函数，这里就体现了为什么说Unity已经帮我们封装好了很多我们要用到的函数，SPR的画笔~
+        context.DrawSkybox(camera);
+    }
+
+    void Submit()
+    {
+        //提交当前上下文中缓存的指令队列，执行指令队列
+        context.Submit();
+    }
+}
+```
+
+完成了这步，Scene和Game视窗内出现了天空盒，从FrameDebugger中也可以抓帧看到执行了一条Camera.RenderSkybox，其内部进行了一次Draw Mesh，也就是天空盒的Mesh。（FrameDebugger是个很不错的工具，要多多使用~）
+
+另外值得注意的一点是，目前我们并没有根据摄像机的信息（位置、朝向）去渲染天空盒，因此当摄像机转动时，渲染的天空盒是不会因此发生变化的。因此我们需要提供摄像机的View Matrix（世界空间->观察空间）与Projection Matrix（观察空间->裁剪空间），在Shader中这两者合并为unity_MatrixVP提供给vertex和fragment着色器使用。
+
+[抓帧图片]
+
+此时，无论改变scene camera还是main camera，抓帧显示的unity_MatrixVP都不会发生变化，当前应该是默认值，我挺好奇默认值为啥这么怪。
+
+好了，到了这一节的第三个终点，我们要在绘制天空盒前把摄像机的信息告诉上下文，实现方法如下。
+
+```
+    public void Render(ScriptableRenderContext context, Camera camera)
+    {
+        //设定当前上下文和摄像机
+        this.context = context;
+        this.camera = camera;
+        
+        Setup();
+        DrawVisibleGeometry();
+        Submit();
+    }
+
+    void Setup()
+    {
+        //把当前摄像机的信息告诉上下文，这样shader中就可以获取到当前帧下摄像机的信息，比如VP矩阵等
+        context.SetupCameraProperties(camera);
+    }
+```
+
+此时，我们转动scene窗口摄像机，天空盒会被正确地绘制了，当改变main camera的transform时，抓帧可以看到unity_MatrixVP矩阵发生了变化。（从这一点也可以看出，即使不在Runtime下，FrameDebugger抓帧抓的也是Game视窗下的）
+
+#### 2.3 渲染指令缓冲 Command Buffers
+
+在2.2中，很重要的一点是**我们将一系列渲染指令添加到上下文的渲染指令缓冲中，然后通过Submit提交指令队列，以此按顺序执行所有指令**。像DrawSkybox这样的指令，它直接被定义在了context中（可以通过context.DrawSkybox执行），但有其他的指令必须通过Command buffer的实例去执行。
+
+因此我们首先在Camera Renderer中创建一个Command Buffer的实例对象，并且通过buffer.Begin/EndSample让Profiler和Frame Debugger对其进行监测。
+
+```
+void Setup()
+    {
+        //在Profiler和Frame Debugger中开启对Command buffer的监测
+        buffer.BeginSample(bufferName);
+        //提交CommandBuffer并且清空它，在Setup中做这一步的作用应该是确保在后续给CommandBuffer添加指令之前，其内容是空的。
+        ExecuteBuffer();
+        //把当前摄像机的信息告诉上下文，这样shader中就可以获取到当前帧下摄像机的信息，比如VP矩阵等
+        context.SetupCameraProperties(camera);
+    }
+    void DrawVisibleGeometry()
+    {
+        //添加“绘制天空盒”指令，DrawSkybox为ScriptableRenderContext下已有函数，这里就体现了为什么说Unity已经帮我们封装好了很多我们要用到的函数，SPR的画笔~
+        context.DrawSkybox(camera);
+    }
+
+    void Submit()
+    {
+        //在Proiler和Frame Debugger中结束对Command buffer的监测
+        buffer.EndSample(bufferName);
+        //提交CommandBuffer并且清空它
+        ExecuteBuffer();
+        //提交当前上下文中缓存的指令队列，执行指令队列
+        context.Submit();
+    }
+
+    void ExecuteBuffer()
+    {
+        //我们默认在CommandBuffer执行之后要立刻清空它，如果我们想要重用CommandBuffer，需要针对它再单独操作（不使用ExecuteBuffer），舒服的方法给常用的操作~
+        context.ExecuteCommandBuffer(buffer);
+        buffer.Clear();
+    }
+```
+
+显然，此时我们CommandBuffer里并没有添加任何操作，因此执行CommandBuffer时其实什么都没做，但通过FrameDebugger可以看到Render Camera这个标签下把RenderSkybox包括进去了。这是不是很奇怪？因为Render Camera这个标签我们是想用来监测CommandBuffer的（毕竟我们执行的是buffer.BeginSample)。因此我在这里做大胆猜想，buffer.BeginSample的内部其实调用的就是Profiler.BeginSample，而Profiler.BeginSample和EndSample是用于监测一个时间段内的操作，因此由于在buffer的Sample过程中，我们执行了DrawSkybox，导致了DrawSkybox被包括在了Render Camera这一标签下。
+
+而这个猜想很快得到了验证，在我将buffer.BeginSample放在DrawSkybox之后执行时，FrameDebugger中DrawSkybox不再包括在Render Camera标签下。（但具体是不是直接调用的Profiler.BeginSample有待考证）
+
+#### 2.4 清除渲染目标 Clearing the Render Target
 
 ## 参考
 1. https://catlikecoding.com/unity/tutorials/custom-srp/custom-render-pipeline/
