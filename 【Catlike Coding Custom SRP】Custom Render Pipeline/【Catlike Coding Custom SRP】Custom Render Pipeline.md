@@ -242,7 +242,24 @@ void Setup()
 
 而这个猜想很快得到了验证，在我将buffer.BeginSample放在DrawSkybox之后执行时，FrameDebugger中DrawSkybox不再包括在Render Camera标签下。（但具体是不是直接调用的Profiler.BeginSample有待考证）
 
+![](2022-12-07-00-16-53.png)
+
 #### 2.4 清除渲染目标 Clearing the Render Target
+
+Render Target指的是摄像机应该渲染到的地方，这个地方要么是Frame Buffer（也就是最终会输出到屏幕上的buffer），要么是Render Texture（我们自己创建的渲染纹理，这张纹理可以用来做任何事，当然也可以当frame buffer用）。
+
+在一帧内，摄像机在开始渲染前通常会清空其Render Target，包括了Color（颜色）、Depth（深度）和Stencil（模板），以确保前一帧的内容不会影响到当前帧内容。
+
+这一节需要注意的一点是，在SetupCameraProperties之前进行ClearRenderTarget不如在其之后进行，从结果上来说，前者实现清理是通过渲染一个full-screen quad来达到的，而后者是直接清理其颜色、深度缓冲达到的，因此前者（进行一次渲染Draw GL）效率不如后者（直接操作缓存）。但其原因是什么不得而知，我猜想这是因为ClearRenderTarget执行中会先判断当前上下文是否设置了当前的Render Target，如果未设置，则放置一个full-screen quad到场景中，一旦之后SetupCameraProperties时，立刻渲染一次；而先设置就很好理解，已知Render Target，就知道缓冲的地址，直接清除缓冲就行。
+
+![](2022-12-07-00-46-20.png)
+
+<center>先SetupCameraProperties再ClearRenderTarget</center>
+
+![](2022-12-07-00-50-39.png)
+<center>先ClearRenderTarget再SetupCameraProperties</center>
+
+
 
 ## 参考
 1. https://catlikecoding.com/unity/tutorials/custom-srp/custom-render-pipeline/

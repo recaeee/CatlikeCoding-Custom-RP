@@ -30,12 +30,16 @@ public class CameraRenderer
 
     void Setup()
     {
+        //把当前摄像机的信息告诉上下文，这样shader中就可以获取到当前帧下摄像机的信息，比如VP矩阵等
+        //同时也会设置当前的Render Target，这样ClearRenderTarget可以直接清除Render Target中的数据，而不是通过绘制一个全屏的quad来达到同样效果（比较费）
+        context.SetupCameraProperties(camera);
+        //清除当前摄像机Render Target中的内容,包括深度和颜色，ClearRenderTarget内部会Begin/EndSample(buffer.name)
+        buffer.ClearRenderTarget(true,true,Color.clear);
         //在Profiler和Frame Debugger中开启对Command buffer的监测
         buffer.BeginSample(bufferName);
+        // context.SetupCameraProperties(camera);
         //提交CommandBuffer并且清空它，在Setup中做这一步的作用应该是确保在后续给CommandBuffer添加指令之前，其内容是空的。
         ExecuteBuffer();
-        //把当前摄像机的信息告诉上下文，这样shader中就可以获取到当前帧下摄像机的信息，比如VP矩阵等
-        context.SetupCameraProperties(camera);
     }
     void DrawVisibleGeometry()
     {
