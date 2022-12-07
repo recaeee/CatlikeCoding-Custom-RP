@@ -119,7 +119,7 @@ public class CustomRenderPipeline : RenderPipeline
 
 我们希望每一个摄像机都会以各自的方式去渲染。所以我们不会使用CustomRenderPipeline渲染所有的摄像机，而是定义一个CameraRenderer类用于管理所有摄像机的渲染。
 
-```
+```c#
 using UnityEngine;
 using UnityEngine.Rendering;
 
