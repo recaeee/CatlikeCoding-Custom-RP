@@ -5,6 +5,8 @@ public class CameraRenderer
 {
     //定义Command Buffer的名字，FrameDebugger会捕捉到它，由此可见FrameDebugger会以Command Buffer为单位去抓取一帧内的渲染过程
     private const string bufferName = "Render Camera";
+    //获取ShaderId，用于告诉渲染器我们支持渲染哪些ShaderPasses
+    private static ShaderTagId unlitShaderTagId = new ShaderTagId("SRPDefaultUnlit");
 
     private CommandBuffer buffer = new CommandBuffer()
     {
@@ -16,12 +18,20 @@ public class CameraRenderer
     //存放摄像机渲染器当前应该渲染的摄像机
     private Camera camera;
 
+    //存放摄像机剔除结果
+    private CullingResults cullingResults;
+
     //摄像机渲染器的渲染函数，在当前渲染上下文的基础上渲染当前摄像机
     public void Render(ScriptableRenderContext context, Camera camera)
     {
         //设定当前上下文和摄像机
         this.context = context;
         this.camera = camera;
+
+        if (!Cull())
+        {
+            return;
+        }
         
         Setup();
         DrawVisibleGeometry();
@@ -43,6 +53,18 @@ public class CameraRenderer
     }
     void DrawVisibleGeometry()
     {
+        //决定物体绘制顺序是正交排序还是基于深度排序的配置
+        var sortingSettings = new SortingSettings(camera)
+        {
+            criteria = SortingCriteria.CommonOpaque
+        };
+        //决定摄像机支持的Shader Pass和绘制顺序等的配置
+        var drawingSettings = new DrawingSettings(unlitShaderTagId, sortingSettings);
+        //决定过滤哪些Visible Objects的配置，包括支持的RenderQueue等
+        var filteringSettings = new FilteringSettings(RenderQueueRange.all);
+        //渲染CullingResults内的VisibleObjects
+        context.DrawRenderers(cullingResults, ref drawingSettings, ref filteringSettings);
+        context.DrawRenderers(cullingResults, ref drawingSettings, ref filteringSettings);
         //添加“绘制天空盒”指令，DrawSkybox为ScriptableRenderContext下已有函数，这里就体现了为什么说Unity已经帮我们封装好了很多我们要用到的函数，SPR的画笔~
         context.DrawSkybox(camera);
     }
@@ -62,5 +84,17 @@ public class CameraRenderer
         //我们默认在CommandBuffer执行之后要立刻清空它，如果我们想要重用CommandBuffer，需要针对它再单独操作（不使用ExecuteBuffer），舒服的方法给常用的操作~
         context.ExecuteCommandBuffer(buffer);
         buffer.Clear();
+    }
+
+    bool Cull()
+    {
+        //获取摄像机用于剔除的参数
+        if (camera.TryGetCullingParameters(out ScriptableCullingParameters p))
+        {
+            cullingResults = context.Cull(ref p);
+            return true;
+        }
+
+        return false;
     }
 }
