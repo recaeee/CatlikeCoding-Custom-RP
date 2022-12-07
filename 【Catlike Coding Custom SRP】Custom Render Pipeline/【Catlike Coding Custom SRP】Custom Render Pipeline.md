@@ -171,7 +171,7 @@ public class CameraRenderer
 
 另外值得注意的一点是，目前我们并没有根据摄像机的信息（位置、朝向）去渲染天空盒，因此当摄像机转动时，渲染的天空盒是不会因此发生变化的。因此我们需要提供摄像机的View Matrix（世界空间->观察空间）与Projection Matrix（观察空间->裁剪空间），在Shader中这两者合并为unity_MatrixVP提供给vertex和fragment着色器使用。
 
-[抓帧图片]
+![[抓帧图片] 1](images/308519385583ce4479d11021288ebe1419e1a181b3570d9740e2b678438ee9d8.png)  
 
 此时，无论改变scene camera还是main camera，抓帧显示的unity_MatrixVP都不会发生变化，当前应该是默认值，我挺好奇默认值为啥这么怪。
 
