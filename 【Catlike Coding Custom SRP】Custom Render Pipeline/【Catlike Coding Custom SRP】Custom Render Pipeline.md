@@ -421,7 +421,58 @@ context.DrawRenderers(cullingResults, ref drawingSettings, ref filteringSettings
 
 #### 2.7 分别绘制不透明和透明几何体 Drawing Opaque and Transparent Geometry Separately
 
+在上一节中，我们出现了Unlit的透明物体绘制结果错误的问题，原因很简单，我们先绘制了所有Unlit的物体，然后绘制了天空盒，而天空盒的绘制逻辑是**在深度值为无限远的像素上进行天空盒的绘制**。而我们都知道，Opaque物体在渲染时会将其深度值写入深度缓冲，而透明物体在渲染时不会将其深度值写入深度缓冲（Z Write Off)，这也就导致了这一现象的产生。因此，正确的绘制顺序是**Opaque物体->Skybox->Transparent物体**。
 
+对应伪代码如下所示。筛选出Opaque物体和Transparent物体很简单，我们在DrawRenderers之前设置filtering.renderQueueRange就行。
+
+```c#
+    context.DrawRenderers(Opaque物体)
+    context.DrawSkybox()
+    context.DrawRenderers(Transparent物体)
+```
+
+具体代码如下。
+
+```c#
+    void DrawVisibleGeometry()
+    {
+        //决定物体绘制顺序是正交排序还是基于深度排序的配置
+        var sortingSettings = new SortingSettings(camera)
+        {
+            criteria = SortingCriteria.CommonOpaque
+        };
+        //决定摄像机支持的Shader Pass和绘制顺序等的配置
+        var drawingSettings = new DrawingSettings(unlitShaderTagId, sortingSettings);
+        //决定过滤哪些Visible Objects的配置，包括支持的RenderQueue等
+        var filteringSettings = new FilteringSettings(RenderQueueRange.opaque);
+        //渲染CullingResults内不透明的VisibleObjects
+        context.DrawRenderers(cullingResults, ref drawingSettings, ref filteringSettings);
+        //添加“绘制天空盒”指令，DrawSkybox为ScriptableRenderContext下已有函数，这里就体现了为什么说Unity已经帮我们封装好了很多我们要用到的函数，SPR的画笔~
+        context.DrawSkybox(camera);
+        //渲染透明物体
+        //设置绘制顺序为从后往前
+        sortingSettings.criteria = SortingCriteria.CommonTransparent;
+        //注意值类型
+        drawingSettings.sortingSettings = sortingSettings;
+        //过滤出RenderQueue属于Transparent的物体
+        filteringSettings.renderQueueRange = RenderQueueRange.transparent;
+        //绘制透明物体
+        context.DrawRenderers(cullingResults, ref drawingSettings, ref filteringSettings);
+        
+    }
+```
+
+注意，我们在绘制透明物体之前，将绘制顺序改为了**从后往前**（绘制Opaque物体时则使用的从前往后，为了减少OverDraw)。不像Opaque物体，对透明物体设置从前往后的绘制顺序是没有意义的，因为不管怎么样，这个像素都会被绘制，不存在OverDraw的问题。其次，从后往前的渲染顺序让透明物体之间也能体现出前后关系，也就是说如果假如透明物体A在透明物体B的前面，而两者在片元上有所重叠，那么先绘制A再绘制B，结果就看起来A在B的后面，这与实际矛盾；而先绘制B再绘制A，看起来就是A在B的前面。
+
+其原因用数学也很好理解，假如绘制完Opaque和天空盒后，摄像机的颜色缓冲中有个像素值为100，我先绘制透明物体A，A颜色值为20，其颜色值变为(100 x 0.5+20 x 0.5)=60,再绘制B，B颜色值为200，最终颜色(60 x 0.5+200 x 0.5)=130。而反过来，先绘制B，颜色值(100 x 0.5+200 x 0.5)=150，再绘制A，最终颜色(150 x 0.5+20 x 0.5)=85。显然两者结果（130和85）不一样。（如果还是不理解，网上找一找图示吧）
+
+再次不厌其烦地贴上Frame Debugger的截图，多熟悉熟悉Frame Debugger~
+
+<div align=center>
+
+![picture 5](images/dceedfbc5a0af62cba445cc63621ba94364baeffee2a9ba34faf06917cc87aa0.png)  
+
+</div>
 
 
 ## 参考

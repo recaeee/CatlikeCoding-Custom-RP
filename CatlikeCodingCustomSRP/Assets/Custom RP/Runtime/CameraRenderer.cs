@@ -61,12 +61,21 @@ public class CameraRenderer
         //决定摄像机支持的Shader Pass和绘制顺序等的配置
         var drawingSettings = new DrawingSettings(unlitShaderTagId, sortingSettings);
         //决定过滤哪些Visible Objects的配置，包括支持的RenderQueue等
-        var filteringSettings = new FilteringSettings(RenderQueueRange.all);
-        //渲染CullingResults内的VisibleObjects
-        context.DrawRenderers(cullingResults, ref drawingSettings, ref filteringSettings);
+        var filteringSettings = new FilteringSettings(RenderQueueRange.opaque);
+        //渲染CullingResults内不透明的VisibleObjects
         context.DrawRenderers(cullingResults, ref drawingSettings, ref filteringSettings);
         //添加“绘制天空盒”指令，DrawSkybox为ScriptableRenderContext下已有函数，这里就体现了为什么说Unity已经帮我们封装好了很多我们要用到的函数，SPR的画笔~
         context.DrawSkybox(camera);
+        //渲染透明物体
+        //设置绘制顺序为从后往前
+        sortingSettings.criteria = SortingCriteria.CommonTransparent;
+        //注意值类型
+        drawingSettings.sortingSettings = sortingSettings;
+        //过滤出RenderQueue属于Transparent的物体
+        filteringSettings.renderQueueRange = RenderQueueRange.transparent;
+        //绘制透明物体
+        context.DrawRenderers(cullingResults, ref drawingSettings, ref filteringSettings);
+        
     }
 
     void Submit()
