@@ -474,6 +474,78 @@ context.DrawRenderers(cullingResults, ref drawingSettings, ref filteringSettings
 
 </div>
 
+#### 3 拓展渲染 Editor Rendering
+
+到了这里，我们管线支持了Unlit Shader Pass的物体（包括Opaque和Transparent）和天空盒的渲染，接下来就是改善我们的管线了~
+
+#### 3.1 绘制过时的Shaders Drawing Legacy Shaders
+
+首先，我们在SRP里会不支持一些Builtin中的Shader Passes，对于这些不支持的Shader Passes，我们现在的处理方式是直接不绘制这些物体，但这些物体实际存在，所以我们还是需要以特定的一种方式去绘制他们（相信大家没少看到粉色材质的物体）。
+
+我们首先定义一个ShaderTagId的数组，然后通过**drawingSettings.SetShaderPassName**告诉context本次Draw Call应该绘制哪些Shader Passes。
+
+下面为该函数的Rider反编译。
+
+```c#
+    /// <summary>
+    ///   <para>Set the shader passes that this draw call can render.</para>
+    /// </summary>
+    /// <param name="index">Index of the shader pass to use.</param>
+    /// <param name="shaderPassName">Name of the shader pass.</param>
+    public unsafe void SetShaderPassName(int index, ShaderTagId shaderPassName)
+    {
+      if (index >= DrawingSettings.maxShaderPasses || index < 0)
+        throw new ArgumentOutOfRangeException(nameof (index), string.Format("Index should range from 0 to DrawSettings.maxShaderPasses ({0}), was {1}", (object) DrawingSettings.maxShaderPasses, (object) index));
+      fixed (int* numPtr = this.shaderPassNames)
+        numPtr[index] = shaderPassName.id;
+    }
+```
+
+从代码中我们可以看出，在C++层，Unity维护了一个数组用来存放注入的所有ShaderTagId，同时这个数组的大小受maxShaderPasses制约。[官方文档](https://docs.unity3d.com/cn/2021.3/ScriptReference/Rendering.DrawingSettings.html)对该函数的解释是**设置此绘制调用可渲染的着色器通道**。
+
+那么到了这里，我们就知道，如果我们想在一次DrawCall中设置我们想绘制的Shader Passes，那么方法1：**在DrawSettings的构造函数中设置第一个Shader Pass**；方法2：**通过SetShaderPassName设置更多的Shader Passes**。
+
+在这里也补充下**ShaderTagId**的知识吧，参考[这篇文章](https://zhuanlan.zhihu.com/p/87602137),ShaderTagId是**对Shader Pass中的Tags的描述**，比如如果我们在Shader Pass中写了{"LigthtMode" = "UniversalForward"}，那么这个Pass就被贴上了UniversalForward这个Tag。通过这个Tag，我们就可以决定我们要不要绘制这个Shader Pass。
+
+#### 3.2 错误的材质 Error Material
+
+通过上一步，我们绘制出来的物体是纯黑的，因为我们并不支持这些物体的Shader Pass，但想去绘制他们。这一节，我们使用错误专用的材质（我们熟悉的粉色）来绘制这些物体。
+
+这也就意味着，我们不根据这些物体本身的材质，而是使用一种新材质去覆盖他们进行渲染。我们通过设置drawSettings中的**overrideMaterial**来实现这个效果，官方文档对overrideMaterial的解释是**设置材质以用于将在此组中渲染的所有渲染器**。
+
+```c#
+    void DrawUnsupportedShaders()
+    {
+        //获取Error材质
+        if (errorMaterial == null)
+        {
+            errorMaterial = new Material(Shader.Find("Hidden/InternalErrorShader"));
+        }
+        //绘制走不支持的Shader Pass的物体
+        var drawingSettings = new DrawingSettings(legacyShaderTagIds[0], new SortingSettings(camera))
+        {
+            //设置覆写的材质
+            overrideMaterial = errorMaterial
+        };
+        
+        //设置更多在此次DrawCall中要渲染的ShaderPass，也就是不支持的ShaderPass
+        for (int i = 1; i < legacyShaderTagIds.Length; i++)
+        {
+            drawingSettings.SetShaderPassName(i, legacyShaderTagIds[i]);
+        }
+        var filteringSettings = FilteringSettings.defaultValue;
+        context.DrawRenderers(cullingResults, ref drawingSettings, ref filteringSettings);
+    }
+```
+
+通过Frame Debugger也可以看到这些物体的绘制使用了Error Shader的Pass
+
+<div align=center>
+
+![](2022-12-09-00-26-04.png)
+
+</div>
+
 
 ## 参考
 1. https://catlikecoding.com/unity/tutorials/custom-srp/custom-render-pipeline/
@@ -483,3 +555,4 @@ context.DrawRenderers(cullingResults, ref drawingSettings, ref filteringSettings
 5. https://zhuanlan.zhihu.com/p/70668533
 6. https://www.zhihu.com/question/379857981
 7. https://www.zhihu.com/question/379346645/answer/1079363174
+8. https://zhuanlan.zhihu.com/p/87602137
