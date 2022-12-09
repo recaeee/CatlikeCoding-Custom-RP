@@ -4,7 +4,9 @@
 
 
 以下是原教程链接与我的Github工程：
+
 [CatlikeCoding-SRP-Tutorial](https://catlikecoding.com/unity/tutorials/custom-srp/)
+
 [我的Github工程](https://github.com/recaeee/CatlikeCoding-Custom-RP)
 
 我使用的Unity版本为2021.3.11f1c2(教程中使用的为2019.2.6f1，希望之后不会给自己挖坑)，初始项目为Built-in的模板工程。废话了这么多，进入正题吧。
@@ -144,7 +146,7 @@ public class CameraRenderer
 
 #### 2.2 绘制天空盒 Drawing the Skybox
 
-虽然这一步的标题是“绘制天空盒”，但我们更需要注意的一点是，我们渲染的流程是**将一系列渲染相关的指令缓存到上下文中，再进行提交，以此按顺序执行缓存的指令队列**。
+虽然这一步的标题是“绘制天空盒”，但我们更需要注意的一点是，我们渲染的流程是**将一系列渲染相关的指令缓存到上下文中，再进行提交，以此按顺序执行缓存的指令队列**。（但在后续的文章中，我可能不会说“向context注入XXXX绘制指令”，而是直接说绘制XXXX，但是这样的思想需要熟记）
 
 ```c#
 using UnityEngine;
@@ -189,7 +191,7 @@ public class CameraRenderer
 
 <div align=center>
 
-![[抓帧图片] 1](images/308519385583ce4479d11021288ebe1419e1a181b3570d9740e2b678438ee9d8.png)  
+![](images/308519385583ce4479d11021288ebe1419e1a181b3570d9740e2b678438ee9d8.png)  
 
 </div>
 
@@ -546,6 +548,177 @@ context.DrawRenderers(cullingResults, ref drawingSettings, ref filteringSettings
 
 </div>
 
+#### 3.3 分部类 Partial Class
+
+使用partial关键字修饰class的唯一作用就是更清晰地组织代码，因为写两个partial完全可以用一个代替。最常用的例子就是让自动生成的代码与手写的代码分离。（相关c#知识自行补充，可以参考[微软文档](https://learn.microsoft.com/zh-cn/dotnet/csharp/programming-guide/classes-and-structs/partial-classes-and-methods)）
+
+在这小节，我们将绘制UnsupportedShaders的方法以其其用到的Error Material、ShaderTagArray放在Partial部分，然后用UNITY_EDITOR关键字包裹，这样这段代码就会只在Editor下起作用。
+
+同时因为我们在Render函数中执行了DrawUnsupportedShaders这一Editor下的方法，因此我们还需要使用partial修饰DrawUnsupportedShaders这一方法，使其成为**分部方法**，其声明类似C++。[微软文档](https://learn.microsoft.com/zh-cn/dotnet/csharp/programming-guide/classes-and-structs/partial-classes-and-methods)中对分部方法做了如下解释，**可以在同一部分或另一部分中定义实现。 如果未提供该实现，则会在编译时删除方法以及对方法的所有调用**。因此，在Runtime下，由于我们并不会实现该函数，编译时就会删除该函数和其调用，Render函数就会跳过该函数正常执行。
+
+```c#
+    public partial class CameraRenderer
+    {
+        //定义分部函数的方式类似C++
+        partial void DrawUnsupportedShaders();
+        //这块代码只会在Editor下起作用
+        #if UNITY_EDITOR
+        //获取Unity默认的shader tag id
+        private static ShaderTagId[] legacyShaderTagIds =
+        {
+            new ShaderTagId("Always"),
+            new ShaderTagId("ForwardBase"),
+            new ShaderTagId("PrepassBase"),
+            new ShaderTagId("Vertex"),
+            new ShaderTagId("VertexLMRGBM"),
+            new ShaderTagId("VertexLM")
+        };
+
+        //Error Material
+        private static Material errorMaterial;
+        partial void DrawUnsupportedShaders()
+        {
+            //获取Error材质
+            if (errorMaterial == null)
+            {
+                errorMaterial = new Material(Shader.Find("Hidden/InternalErrorShader"));
+            }
+            //绘制走不支持的Shader Pass的物体
+            var drawingSettings = new DrawingSettings(legacyShaderTagIds[0], new    SortingSettings(camera))
+            {
+                //设置覆写的材质
+                overrideMaterial = errorMaterial
+            };
+
+            //设置更多在此次DrawCall中要渲染的ShaderPass，也就是不支持的ShaderPass
+            for (int i = 1; i < legacyShaderTagIds.Length; i++)
+            {
+                drawingSettings.SetShaderPassName(i, legacyShaderTagIds[i]);
+            }
+            var filteringSettings = FilteringSettings.defaultValue;
+            context.DrawRenderers(cullingResults, ref drawingSettings, ref  filteringSettings);
+        }
+        #endif
+    }
+```
+
+#### 3.4 绘制Gizmos Drawing Gizmos
+
+实在不知道Gizmos怎么翻译了，总之就是一些Scene窗口用于辅助调试的可视化工具。[Unity官方文档](https://docs.unity3d.com/cn/2021.3/Manual/GizmosAndHandles.html)对Gizmos和其相关的Handle类进行了如下描述，**Gizmos 和 Handles 类用于在 Scene 视图和 Game 视图绘制线条和形状以及交互式手柄和控件**。比如下图（图片引自原教程）中的光源（小太阳）、摄像机图标等等。
+
+<div align=center>
+
+![](2022-12-09-23-11-02.png)
+
+</div>
+
+Unity已经为我们封装好了Gizmos的绘制方法，同时因为我们只会在Editor下绘制Gizmos，因此我们将DrawGizmos方法定义为分部方法，在Render中它在绘制完其他一切物体之后进行绘制。
+
+```c#
+    partial void DrawGizmos()
+    {
+        //Scene窗口中绘制Gizmos
+        if (Handles.ShouldRenderGizmos())
+        {
+            context.DrawGizmos(camera, GizmoSubset.PreImageEffects);
+            context.DrawGizmos(camera, GizmoSubset.PostImageEffects);
+        }
+    }
+```
+
+绘制Gizmos的方法非常简单，调用Unity封装好的函数就行，但我们需要注意的是，Scene视图和Game视图均有Gizmos菜单，因此我们会发现一个也许我们不曾注意过的一点，也就是**Scene视图下用于观察的摄像机也执行的是同一套渲染管线，也就是我们的SRP**。当然，细心的同学们应该早就发现了，而我想这一点或许才是这一节的重点吧（除了一些用Gizmos和Handle制作编辑器和各种酷炫功能的大佬们）。
+
+#### 3.5 绘制UI Drawing Unity UI
+
+UI是游戏不可或缺的一部分，一些游戏甚至会把UI做到极致，比如女神异闻录5，在我看来应该算是UI里的天花板，游戏本身也是个神作（安利一波~）。因此，我们接下来要完善UI的绘制。UI在渲染是一个大学问，我会花较多的笔墨来介绍，请耐心看完。
+
+我们首先不妨实验一下，在这里我们先不去实现任何UI相关的绘制方法，我们先在Hierarchy中创建一个UI Button。结果，在Game视图中你会看到如下图的结果。
+
+<div align=center>
+
+![](2022-12-09-23-24-51.png)
+
+</div>
+
+你可能会好奇，我们并没有实现任何关于UI绘制的方法，但是在Game视图下，UI已经被渲染了。这时候，使用我们最爱的Frame Debugger抓帧看一看。
+
+<div align=center>
+
+![](2022-12-09-23-27-25.png)
+
+</div>
+
+我们可以看到一帧一共进行了如下操作，清空摄像机的buffer、绘制Opaque物体、绘制天空盒、绘制Transparent物体，最后是新增的一个**UGUI.Rendering.RenderOverlays**标签，在其中，先执行了模板缓冲的清除，然后绘制了两个Mesh，第一个Mesh是Button的白色底板，第二个Mesh是Button上的Text，两者均使用了UI/Default这一Shader中的Default Pass来进行绘制。
+
+这很奇怪吧，但我们并没有在CommandBuffer中注入任何对于UI绘制的渲染指令，你可能猜想，我们可能在之前绘制物体（即调用DrawRenderers）中可能囊括了对UI的绘制（即我们的DrawSetting支持对UI的绘制），因此导致UI也被绘制了。至少我一开始是这样猜想的，但很快发现我错了，我把Render中所有绘制相关的函数注释掉后，UI Button在Game视图下仍会被绘制，同时Frame Debugger中仍然存在UGUI.Rendering.RenderOverlays这一标签。
+
+```c#
+    public void Render(ScriptableRenderContext context, Camera camera)
+    {
+        //设定当前上下文和摄像机
+        this.context = context;
+        this.camera = camera;
+        
+        // PrepareForSceneWindow();
+        if (!Cull())
+        {
+            return;
+        }
+        
+        // Setup();
+        // DrawVisibleGeometry();
+        // DrawUnsupportedShaders();
+        // DrawGizmos();
+        // Submit();
+    }
+```
+
+<div align=center>
+
+![](2022-12-09-23-39-06.png)
+
+</div>
+
+在查阅[Unity官方的解释](https://docs.unity3d.com/cn/2021.3/Manual/class-Canvas.html)后，这个问题得到了解答。其原因就是**在创建Button时，其父物体Canvas默认的Render Mode为Screen Space - Overlay，在此模式下，画布会进行缩放来适应屏幕，然后直接渲染而不参考场景或摄像机（即使场景中根本没有摄像机，也会渲染 UI）**。（突然就感觉一切变得合理了~）
+
+那同时，我们引入对另外两种**Canvas Render Mode**的介绍。
+
+**Screen Space - Camera模式**
+
+在该模式下，可以指定渲染该Canvas的摄像机，此时UI会被在该摄像机的Render中作为**Transparent物体**来绘制（依然是在屏幕空间上绘制，但此时Canvas的Transform中的Position为它的**世界坐标**，而Overlay中的Position则有不一样的意义，自己可以去看看）。但是，**其绘制结果可能并不像透明物体那样**！比如在下图中，我们观察到**2个现象**，其一，UIButton会被Opaque的小球遮挡；其二，UIButton看起来在Transparent的小球的后面。
+
+<div align=center>
+
+![](2022-12-10-00-00-37.png)
+
+</div>
+
+对于这两个问题，我们首先看一下官方对这一模式的部分解释：**在此模式下，画布的渲染效果就好像是在摄像机前面一定距离的平面对象上绘制的效果。场景中比 UI 平面更靠近摄像机的所有 3D 对象都将在 UI 前面渲染，而平面后的对象将被遮挡。**
+
+（**以下为我的猜想，不一定对**）这两句话解释了这两个现象。我们首先知道UICanvas在该模式下拥有其世界坐标，同时所有距离摄像机比UI Canvas（的世界坐标）更近的3D物体都会在UI前面渲染（注意，这里的“在UI前面渲染”指的是看上去物体在UI的前面，实际的绘制顺序可能是先绘制3D物体，再绘制UI，可能是使用了Z Test去做到这样的效果）。此时，第一个现象就很好解释了，即**这个黄色小球比UI Canvas距离我们的摄像机更近**，UI Button在绘制的时候进行了Z Test（比较用的是Canvas的深度），舍弃了重叠部分的片元。同时，按这个思路，第二个现象也很好解释了，即**这个透明小球比UI Canvas距离我们的摄像机更近**，我们知道对于透明物体来说，距离摄像机更近就意味着更晚被渲染，因此其先绘制了UI Button，然后再绘制透明小球。
+
+此外，在该模式下，UI Canvas虽然有世界坐标，但我们不可以直接修改它，而是只能通过设置Canvas距离其Render Camera的Distance来改变其世界坐标。
+
+**World Space模式**
+
+在该模式下，**UI就完全被视为场景中的平面物体来进行渲染**。
+
+介绍完UI Canvas的三种Render Mode之后，回到这一节的原教程内容，在这一节中我们实现了在Scene窗口中绘制UI，该方法也同样只在Editor下执行。值得一提的是，对于三种Render Mode，UI在Scene窗口中永远是以World Space模式来进行绘制，这也就是在Scene视图中UI通常变得非常大的原因，但在运行时，会以正确的Render Mode进行绘制。
+
+```c#
+    partial void PrepareForSceneWindow()
+    {
+        //绘制Scene窗口下的UI
+        if (camera.cameraType == CameraType.SceneView)
+        {
+            ScriptableRenderContext.EmitWorldGeometryForSceneView(camera);
+        }
+    }
+```
+
+我们通过Unity封装好的函数在Scene视图中绘制UI。从代码中我们可以获取一点有用的知识，在管线中我们可以根据摄像机的cameraType去分别操作SceneCamera和GameCamera。另外，在Scene窗口绘制UI需要在进行剔除之前，不然不会被绘制。（猜想可能是Cull会把UI从摄像机的visible gameobject中剔除，导致丢失UI信息）。
+
+#### 4 更多摄像机 Multiple Cameras
 
 ## 参考
 1. https://catlikecoding.com/unity/tutorials/custom-srp/custom-render-pipeline/
@@ -556,3 +729,4 @@ context.DrawRenderers(cullingResults, ref drawingSettings, ref filteringSettings
 6. https://www.zhihu.com/question/379857981
 7. https://www.zhihu.com/question/379346645/answer/1079363174
 8. https://zhuanlan.zhihu.com/p/87602137
+9. 涩图来自wlop大大。

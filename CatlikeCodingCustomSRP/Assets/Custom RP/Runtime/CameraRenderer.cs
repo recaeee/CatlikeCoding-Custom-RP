@@ -1,25 +1,15 @@
 using UnityEngine;
 using UnityEngine.Rendering;
 
-public class CameraRenderer
+public partial class CameraRenderer
 {
     //定义Command Buffer的名字，FrameDebugger会捕捉到它，由此可见FrameDebugger会以Command Buffer为单位去抓取一帧内的渲染过程
     private const string bufferName = "Render Camera";
     //获取ShaderId，用于告诉渲染器我们支持渲染哪些ShaderPasses
     private static ShaderTagId unlitShaderTagId = new ShaderTagId("SRPDefaultUnlit");
-    //获取Unity默认的shader tag id
-    private static ShaderTagId[] legacyShaderTagIds =
-    {
-        new ShaderTagId("Always"),
-        new ShaderTagId("ForwardBase"),
-        new ShaderTagId("PrepassBase"),
-        new ShaderTagId("Vertex"),
-        new ShaderTagId("VertexLMRGBM"),
-        new ShaderTagId("VertexLM")
-    };
     
-    //Error Material
-    private static Material errorMaterial;
+    
+    
 
     private CommandBuffer buffer = new CommandBuffer()
     {
@@ -40,7 +30,9 @@ public class CameraRenderer
         //设定当前上下文和摄像机
         this.context = context;
         this.camera = camera;
-
+        
+        PrepareForSceneWindow();
+        
         if (!Cull())
         {
             return;
@@ -49,6 +41,7 @@ public class CameraRenderer
         Setup();
         DrawVisibleGeometry();
         DrawUnsupportedShaders();
+        DrawGizmos();
         Submit();
     }
 
@@ -119,28 +112,5 @@ public class CameraRenderer
         }
 
         return false;
-    }
-
-    void DrawUnsupportedShaders()
-    {
-        //获取Error材质
-        if (errorMaterial == null)
-        {
-            errorMaterial = new Material(Shader.Find("Hidden/InternalErrorShader"));
-        }
-        //绘制走不支持的Shader Pass的物体
-        var drawingSettings = new DrawingSettings(legacyShaderTagIds[0], new SortingSettings(camera))
-        {
-            //设置覆写的材质
-            overrideMaterial = errorMaterial
-        };
-        
-        //设置更多在此次DrawCall中要渲染的ShaderPass，也就是不支持的ShaderPass
-        for (int i = 1; i < legacyShaderTagIds.Length; i++)
-        {
-            drawingSettings.SetShaderPassName(i, legacyShaderTagIds[i]);
-        }
-        var filteringSettings = FilteringSettings.defaultValue;
-        context.DrawRenderers(cullingResults, ref drawingSettings, ref filteringSettings);
     }
 }
