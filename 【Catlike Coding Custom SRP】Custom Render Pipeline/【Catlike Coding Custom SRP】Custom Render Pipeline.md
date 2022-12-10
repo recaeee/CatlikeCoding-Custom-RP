@@ -23,7 +23,7 @@
 
 <div align=center>
 
-![](2022-11-23-22-51-41.png)
+![20221210151605](https://raw.githubusercontent.com/recaeee/PicGo/main/20221210151605.png)
 
 </div>
 
@@ -46,7 +46,7 @@
 
 <div align=center>
 
-![](2022-12-01-23-53-11.png)
+![![](2022-12-01-23-53-11.png)](https://raw.githubusercontent.com/recaeee/PicGo/main/!%5B%5D(2022-12-01-23-53-11.png).png)
 
 </div>
 
@@ -56,7 +56,7 @@
 
 <div align=center>
 
-![](2022-12-04-23-59-36.png)
+![![](2022-12-04-23-59-36.png)](https://raw.githubusercontent.com/recaeee/PicGo/main/!%5B%5D(2022-12-04-23-59-36.png).png)
 
 </div>
 
@@ -65,7 +65,7 @@
 此时，Unity使用的Render Pipeline是默认的也就是Builtin的内置渲染管线，从Project Setting窗口中也可以看出。
 <div align=center>
 
-![](2022-12-05-00-05-19.png)
+![![](2022-12-05-00-05-19.png)](https://raw.githubusercontent.com/recaeee/PicGo/main/!%5B%5D(2022-12-05-00-05-19.png).png)
 
 </div>
 
@@ -191,7 +191,7 @@ public class CameraRenderer
 
 <div align=center>
 
-![](images/308519385583ce4479d11021288ebe1419e1a181b3570d9740e2b678438ee9d8.png)  
+![![](images308519385583ce4479d11021288ebe1419e1a181b3570d9740e2b678438ee9d8.png)  ](https://raw.githubusercontent.com/recaeee/PicGo/main/!%5B%5D(images308519385583ce4479d11021288ebe1419e1a181b3570d9740e2b678438ee9d8.png)%20%20.png)
 
 </div>
 
@@ -266,7 +266,7 @@ public class CameraRenderer
 
 <div align=center>
 
-![](2022-12-07-00-16-53.png)
+![![](2022-12-07-00-16-53.png)](https://raw.githubusercontent.com/recaeee/PicGo/main/!%5B%5D(2022-12-07-00-16-53.png).png)
 
 </div>
 
@@ -282,11 +282,11 @@ Render Target指的是摄像机应该渲染到的地方，这个地方要么是F
 
 <div align=center>
 
-![](2022-12-07-00-46-20.png)
+![![](2022-12-07-00-46-20.png)](https://raw.githubusercontent.com/recaeee/PicGo/main/!%5B%5D(2022-12-07-00-46-20.png).png)
 
 *先SetupCameraProperties再ClearRenderTarget*
 
-![](2022-12-07-00-50-39.png)
+![![](2022-12-07-00-50-39.png)](https://raw.githubusercontent.com/recaeee/PicGo/main/!%5B%5D(2022-12-07-00-50-39.png).png)
 
 *先ClearRenderTarget再SetupCameraProperties*
 
@@ -359,7 +359,7 @@ context.DrawRenderers(cullingResults, ref drawingSettings, ref filteringSettings
 
 <div aligh=center>
 
-![](2022-12-07-23-08-01.png)
+![![](2022-12-07-23-08-01.png)](https://raw.githubusercontent.com/recaeee/PicGo/main/!%5B%5D(2022-12-07-23-08-01.png).png)
 
 </div>
 
@@ -395,7 +395,7 @@ context.DrawRenderers(cullingResults, ref drawingSettings, ref filteringSettings
 
 <div align=center>
 
-![](2022-12-07-23-21-18.png)
+![![](2022-12-07-23-21-18.png)](https://raw.githubusercontent.com/recaeee/PicGo/main/!%5B%5D(2022-12-07-23-21-18.png).png)
 
 </div>
 
@@ -403,7 +403,7 @@ context.DrawRenderers(cullingResults, ref drawingSettings, ref filteringSettings
 
 <div align=center>
 
-![](2022-12-07-23-22-56.png)
+![![](2022-12-07-23-22-56.png)](https://raw.githubusercontent.com/recaeee/PicGo/main/!%5B%5D(2022-12-07-23-22-56.png).png)
 
 </div>
 
@@ -413,11 +413,13 @@ context.DrawRenderers(cullingResults, ref drawingSettings, ref filteringSettings
 
 <div align=center>
 
-![](![](2022-12-07-23-36-23.png).png)
+![![](![](2022-12-07-23-36-23.png).png)](https://raw.githubusercontent.com/recaeee/PicGo/main/!%5B%5D(!%5B%5D(2022-12-07-23-36-23.png).png).png)
 
 </div>
 
-另外，我们还可以从Game窗口（也就是上上张图）看出，UnlitTransparent的物体（淡白色部分）也被绘制出来了，但是绘制的结果显然并不符合我们的预期，接下来就是关于绘制Opaque物体（即不透明物体）和transparent物体（透明物体）的内容了。
+
+
+另外，我们还可以从Game窗口（也就是上上上张图）看出，UnlitTransparent的物体（淡白色部分）也被绘制出来了，但是绘制的结果显然并不符合我们的预期，接下来就是关于绘制Opaque物体（即不透明物体）和transparent物体（透明物体）的内容了。
 
 如果真正掌握了这节的内容，那其实就会对绘制物体的流程有了很大程度的理解了~
 
@@ -472,7 +474,7 @@ context.DrawRenderers(cullingResults, ref drawingSettings, ref filteringSettings
 
 <div align=center>
 
-![picture 5](images/dceedfbc5a0af62cba445cc63621ba94364baeffee2a9ba34faf06917cc87aa0.png)  
+![![picture 5](imagesdceedfbc5a0af62cba445cc63621ba94364baeffee2a9ba34faf06917cc87aa0.png)  ](https://raw.githubusercontent.com/recaeee/PicGo/main/!%5Bpicture%205%5D(imagesdceedfbc5a0af62cba445cc63621ba94364baeffee2a9ba34faf06917cc87aa0.png)%20%20.png)
 
 </div>
 
@@ -544,7 +546,7 @@ context.DrawRenderers(cullingResults, ref drawingSettings, ref filteringSettings
 
 <div align=center>
 
-![](2022-12-09-00-26-04.png)
+![![](2022-12-09-00-26-04.png)](https://raw.githubusercontent.com/recaeee/PicGo/main/!%5B%5D(2022-12-09-00-26-04.png).png)
 
 </div>
 
@@ -608,7 +610,7 @@ context.DrawRenderers(cullingResults, ref drawingSettings, ref filteringSettings
 
 <div align=center>
 
-![](2022-12-09-23-11-02.png)
+![![](2022-12-09-23-11-02.png)](https://raw.githubusercontent.com/recaeee/PicGo/main/!%5B%5D(2022-12-09-23-11-02.png).png)
 
 </div>
 
@@ -636,7 +638,7 @@ UI是游戏不可或缺的一部分，一些游戏甚至会把UI做到极致，�
 
 <div align=center>
 
-![](2022-12-09-23-24-51.png)
+![![](2022-12-09-23-24-51.png)](https://raw.githubusercontent.com/recaeee/PicGo/main/!%5B%5D(2022-12-09-23-24-51.png).png)
 
 </div>
 
@@ -644,7 +646,7 @@ UI是游戏不可或缺的一部分，一些游戏甚至会把UI做到极致，�
 
 <div align=center>
 
-![](2022-12-09-23-27-25.png)
+![![](2022-12-09-23-27-25.png)](https://raw.githubusercontent.com/recaeee/PicGo/main/!%5B%5D(2022-12-09-23-27-25.png).png)
 
 </div>
 
@@ -675,7 +677,7 @@ UI是游戏不可或缺的一部分，一些游戏甚至会把UI做到极致，�
 
 <div align=center>
 
-![](2022-12-09-23-39-06.png)
+![![](2022-12-09-23-39-06.png)](https://raw.githubusercontent.com/recaeee/PicGo/main/!%5B%5D(2022-12-09-23-39-06.png).png)
 
 </div>
 
@@ -689,7 +691,7 @@ UI是游戏不可或缺的一部分，一些游戏甚至会把UI做到极致，�
 
 <div align=center>
 
-![](2022-12-10-00-00-37.png)
+![![](2022-12-10-00-00-37.png)](https://raw.githubusercontent.com/recaeee/PicGo/main/!%5B%5D(2022-12-10-00-00-37.png).png)
 
 </div>
 
@@ -730,7 +732,7 @@ UI是游戏不可或缺的一部分，一些游戏甚至会把UI做到极致，�
 
 <div align=center>
 
-![](2022-12-10-13-23-11.png)
+![![](2022-12-10-13-23-11.png)](https://raw.githubusercontent.com/recaeee/PicGo/main/!%5B%5D(2022-12-10-13-23-11.png).png)
 
 </div>
 
@@ -746,7 +748,7 @@ UI是游戏不可或缺的一部分，一些游戏甚至会把UI做到极致，�
 
 <div align=center>
 
-![](2022-12-10-13-33-53.png)
+![![](2022-12-10-13-33-53.png)](https://raw.githubusercontent.com/recaeee/PicGo/main/!%5B%5D(2022-12-10-13-33-53.png).png)
 
 </div>
 
@@ -764,7 +766,7 @@ UI是游戏不可或缺的一部分，一些游戏甚至会把UI做到极致，�
 
 <div align=center>
 
-![](2022-12-10-13-58-59.png)
+![![](2022-12-10-13-58-59.png)](https://raw.githubusercontent.com/recaeee/PicGo/main/!%5B%5D(2022-12-10-13-58-59.png).png)
 
 </div>
 
