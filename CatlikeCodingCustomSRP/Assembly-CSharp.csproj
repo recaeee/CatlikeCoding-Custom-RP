@@ -43,8 +43,8 @@
   <ItemGroup>
      <Compile Include="Assets\Custom RP\Runtime\CustomRenderPipeline.cs" />
      <Compile Include="Assets\Custom RP\Runtime\CameraRenderer.cs" />
-     <Compile Include="Assets\Custom RP\Runtime\CustomRenderPipelineAsset.cs" />
      <Compile Include="Assets\Custom RP\Runtime\CameraRenderer.Editor.cs" />
+     <Compile Include="Assets\Custom RP\Runtime\CustomRenderPipelineAsset.cs" />
      <Reference Include="UnityEngine">
      <HintPath>D:\Unity\2021.3.11f1c2\Editor\Data\Managed\UnityEngine\UnityEngine.dll</HintPath>
      </Reference>

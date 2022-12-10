@@ -720,6 +720,130 @@ UI是游戏不可或缺的一部分，一些游戏甚至会把UI做到极致，�
 
 #### 4 更多摄像机 Multiple Cameras
 
+很多时候，我们的游戏中并不会只渲染一个摄像机，最显而易见的是《双人成行》了吧，两个角色视角分别用两个摄像机渲染。另外，我们也经常会使用单独的一个摄像机来渲染UI。
+
+#### 4.1 渲染2个摄像机 Two Cameras
+
+**对于多个摄像机，Unity会根据摄像机的Depth从低到高依次进行渲染**，Main Camera的默认Depth为-1。
+
+我们在Hierarchy中复制Main Camera，并将其更名为Secondary Camera，将其深度值设置为0，这时候抓帧，我们会发现在一个Render Camera标签内进行了这两个摄像机的渲染。造成这样的原因是因为两个摄像机的SampleName均为"Render Camera"，在Frame Debugger中会对相同标签且相邻的Sample合并（这点在前文中也有所体现）。
+
+<div align=center>
+
+![](2022-12-10-13-23-11.png)
+
+</div>
+
+为了分离开两个摄像机的标签，我们使用摄像机的名字作为其Sample Buffer Name，这个的实现同样只作用于Editor下。代码非常简单。
+
+```c#
+    partial void PrepareBuffer()
+    {
+        //对每个摄像机使用不同的Sample Name
+        buffer.name = camera.name;
+    }
+```
+
+<div align=center>
+
+![](2022-12-10-13-33-53.png)
+
+</div>
+
+#### 4.2 处理Sample Buffer Names Dealing with Changing Buffer Names
+
+尽管在Editor的Frame Debugger下我们能正确获取两个摄像机的Sample信息，但其存在两个问题：问题1，进入Play Mode后会报Sample Name不匹配的错（但是我本地并没有这个报错，很奇怪，而且理论上也不应该报错，因为BeginSample和EndSample中的bufferName是一致的呀，但是原文中有这么说，不清楚是为什么）；问题2，每帧在设置buffer.name时会产生GC，因为涉及到字符串的拷贝。
+
+为了解决这两个问题，我们统一使用一个属性SampleName来作为buffer.name，然后在Editor下使用摄像机的名字，而在Runtime下使用常量"Render Camera"，这样Runtime下就不会产生字符串的GC。
+
+但在Runtime下仍然会存在48B的GC，这部分GC是Cameras Array造成的，其大小取决于渲染的摄像机数量，这部分GC不可避免。
+
+在原教程中，这里也使用了Profiler.BeginSamle在Editor下监测设置bufferName时的GC，Profiler.BeginSample的监测结果可以在Profiler中看到。
+
+这里可以看下Editor下的GC组成。
+
+<div align=center>
+
+![](2022-12-10-13-58-59.png)
+
+</div>
+
+上图中，在Editor Only标签下检测了设置Buffer Name的GC，为98B，这部分GC在Runtime下会消失。同时在下面还有一个48B的GC.Alloc，这部分就是Cameras Array的GC，这部分GC无法避免。
+
+```c#
+    partial void PrepareBuffer()
+    {
+        Profiler.BeginSample("Editor Only");
+        //对每个摄像机使用不同的Sample Name
+        buffer.name = SampleName = camera.name;
+        Profiler.EndSample();
+    }
+    
+    #else
+    
+        const string SampleName => bufferName;
+    
+    #endif
+```
+
+#### 4.3 层级 Layers
+
+在Unity中，我们可以设置物体处于的Layer，然后对于每个摄像机，我们可以通过Culling Mask设置其可见的Layer。
+
+这部分的操作很简单，但是在实际游戏开发中，我们会经常运用这点去做一些效果和功能。
+
+#### 4.4 Clear Flags
+
+我们可以通过设置CameraClearFlags来让第二个摄像机在第一个摄像机的渲染结果之上进行渲染（在之前，渲染第二个摄像机时我们会清除所有缓冲）。
+
+在这里我们先看下CameraClearFlags这个Enum类型的Rider反编译结果。
+
+```c#
+    namespace UnityEngine
+    {
+      /// <summary>
+      ///   <para>Values for Camera.clearFlags, determining what to clear when  rendering a Camera.</para>
+      /// </summary>
+      public enum CameraClearFlags
+      {
+        /// <summary>
+        ///   <para>Clear with the skybox.</para>
+        /// </summary>
+        Skybox = 1,
+        Color = 2,
+        /// <summary>
+        ///   <para>Clear with a background color.</para>
+        /// </summary>
+        SolidColor = 2,
+        /// <summary>
+        ///   <para>Clear only the depth buffer.</para>
+        /// </summary>
+        Depth = 3,
+        /// <summary>
+        ///   <para>Don't clear anything.</para>
+        /// </summary>
+        Nothing = 4,
+      }
+    }
+```
+
+通过camera.clearFlags，我们可以在buffer.ClearRenderTarget方法中配置我们应该如何清理颜色、深度缓冲。
+
+```c#
+        buffer.ClearRenderTarget(flags <= CameraClearFlags.Depth, flags == CameraClearFlags.Color,
+            flags == CameraClearFlags.Color ? camera.backgroundColor.linear : Color.clear);
+```
+
+在ClearRenderTarget方法中第一个传入参数决定我们是否清理深度缓冲，一般来说，除了Nothing我们都应该清理深度缓冲，所以传入flags <= CameraClearFlags.Depth（返回的是比较结果的布尔值）。而第二个传入参数决定我们是否清理颜色缓冲，那么传入的比较值就很好理解，因为ClearRenderTarget中定义了该处理的枚举值（即Color）。第三个传入参数决定了我们清理颜色缓冲时使用的颜色，因为我们的管线处于线性空间下，因此如果需要用camera.backgroundColor来清理时需要将其先转换为线性空间下的颜色。
+
+在原教程中，针对Main Camera和Secondary Camera列出了一些不同clearFlags下的渲染结果，大家有兴趣可以去看一看。
+
+#### 结束语
+
+第一章写完啦，不知不觉写了这么长，里面也写了一些我认为比较重要的知识点，不知道有没有人看完呢~
+
+接下来会继续在Github上实时同步最新进度，希望大家都能有所收获~
+
 ## 参考
 1. https://catlikecoding.com/unity/tutorials/custom-srp/custom-render-pipeline/
 2. 冯乐乐《Shader入门精要》

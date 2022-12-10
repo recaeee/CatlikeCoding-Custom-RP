@@ -1,12 +1,14 @@
 using UnityEngine;
 using UnityEngine.Rendering;
 using UnityEditor;
+using UnityEngine.Profiling;
 
 public partial class CameraRenderer
 {
     //定义分部函数的方式类似C++
     partial void DrawGizmos();
     partial void DrawUnsupportedShaders();
+    partial void PrepareBuffer();
 
     partial void PrepareForSceneWindow();
     //这块代码只会在Editor下起作用
@@ -24,6 +26,8 @@ public partial class CameraRenderer
     
     //Error Material
     private static Material errorMaterial;
+
+    private string SampleName { get; set; }
 
     partial void DrawGizmos()
     {
@@ -65,5 +69,18 @@ public partial class CameraRenderer
             ScriptableRenderContext.EmitWorldGeometryForSceneView(camera);
         }
     }
+
+    partial void PrepareBuffer()
+    {
+        Profiler.BeginSample("Editor Only");
+        //对每个摄像机使用不同的Sample Name
+        buffer.name = SampleName = camera.name;
+        Profiler.EndSample();
+    }
+    
+    #else
+    
+        const string SampleName => bufferName;
+    
     #endif
 }
