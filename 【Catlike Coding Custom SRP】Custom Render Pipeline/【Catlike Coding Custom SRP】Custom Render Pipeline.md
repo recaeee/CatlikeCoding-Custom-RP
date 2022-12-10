@@ -409,15 +409,13 @@ context.DrawRenderers(cullingResults, ref drawingSettings, ref filteringSettings
 
 我们需要注意到的是，所有的**DrawCall**（DrawCall相关知识自己补充~）被grouped到了一个叫**RenderLoop.Draw**的标签下。那我们就知道了执行一次context.DrawRenderers，就相当于执行了一个RenderLoop.Draw（从Frame Debugger的体现上来说）。为什么要强调这一点呢？因为，作为引擎，我们未来会经常使用到Frame Debugger（它实在是太香了），所以我们得熟知Frame Debugger中每一个标签的含义，纵观上图，你是否说得出所有标签的含义呢？
 
-以下是我在一帧内执行两次DrawRenderers的抓帧结果，自行理解~（因为两次DrawRenderers是连续执行的，因此Frame Debugger自动将其两个RenderLoop.Draw合并到了一起。如果在其中插入一个RenderSkybox，则会产生两条RenderLoop.Draw，我还是那么好心~）
+以下是我在一帧内DrawRenderers再绘制天空盒再DrawRenderers的抓帧结果（如果两次DrawRenderers是连续执行的，Frame Debugger自动将其两个RenderLoop.Draw合并到一起；如果如下图在其中插入一个RenderSkybox，则会产生两条RenderLoop.Draw）。
 
 <div align=center>
 
 ![![](![](2022-12-07-23-36-23.png).png)](https://raw.githubusercontent.com/recaeee/PicGo/main/!%5B%5D(!%5B%5D(2022-12-07-23-36-23.png).png).png)
 
 </div>
-
-
 
 另外，我们还可以从Game窗口（也就是上上上张图）看出，UnlitTransparent的物体（淡白色部分）也被绘制出来了，但是绘制的结果显然并不符合我们的预期，接下来就是关于绘制Opaque物体（即不透明物体）和transparent物体（透明物体）的内容了。
 
