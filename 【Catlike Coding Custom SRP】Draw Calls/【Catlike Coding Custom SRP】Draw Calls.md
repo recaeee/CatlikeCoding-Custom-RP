@@ -32,11 +32,23 @@
 
 而实际放到Unity中，我们在哪里体现出Draw Call呢？答案是，**一次DrawRenderer往往会产生一至多个Draw Call**。那我们知道，DrawRenderer这个函数是在CommandBuffer下的，那这里我们再谈回到CommandBuffer，思考这样一个问题，**为什么我们需要CommandBuffer？** 我们知道，CommandBuffer将一系列指令缓存在队列中一次提交给GPU，那为什么我们不是告诉GPU一条指令、GPU执行一条指令这样做呢？
 
-其原因就是**Command Buffer（命令缓冲区）实现了让CPU和GPU并行工作**。
+其原因就是**Command Buffer（命令缓冲区）实现了让CPU和GPU并行工作**。命令缓冲区包含了一个命令队列，CPU向其中添加指令，GPU从中读取指令，添加和读取的过程是互相独立的。CommandBuffer中的指令有很多种，Draw Call是其中一种。
 
-最后再明确一点，CommandBuffer中的指令有很多种，Draw Call是其中一种。
+在每次调用Draw Call之前CPU都要向GPU发送许多内容（包括数据、状态、指令等），因此Draw Call的增多会使CPU压力过大，造成性能瓶颈。而为了减少Draw Call，我们就引入了**批处理（Batching）**的方法，把多个小量Draw Call合并成一个大的Draw Call。
+
+由此我们知道了何为Draw Call，Command Buffer的作用以及为什么我们要减少Draw Call。在这一章中，我们就会编写一系列Shader，使其支持**SRP Batcher、GPU Instancing和Dynamic Batching**这些批处理技术。
 
 ---
+
+#### 1 着色器 Shaders
+
+在渲染中，Mesh意味着绘制什么，而Shader决定了怎么绘制它。在我的理解中，Shader就相当于着色器上的一些小程序，在其中我们会定义顶点着色器、片元着色器来决定绘制的方法，而且其通常也需要获取到物体的变换矩阵和一些材质属性。
+
+我想对于Shader的最好的学习方式，无非就是自己去写一些Shader，有时候说得再多都不如自己动手感受下直观。而通过这一章的学习，我们就会对Shader的基本组成和运作方式有一定理解。废话少说，开始写代码~
+
+#### 1.1 无光照着色器 Unlit Shader
+
+
 
 #### 参考
 
