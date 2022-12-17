@@ -4,6 +4,9 @@ Shader "Custom RP/Unlit"
 
     SubShader
     {
-        Pass {}
+        Pass {
+            HLSLPROGRAM
+            ENDHLSL
+            }
     }
 }
