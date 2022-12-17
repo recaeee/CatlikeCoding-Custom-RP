@@ -130,7 +130,84 @@ Shader的第一行首先为**Shader**的关键字，后面的字符串定义了�
 
 #### 1.2 HLSL程序 HLSL Programs
 
-HLSL的全称为High-Level Shading Language，在Unity中编写Shader类时，对于所有HLSL程序，我们都比u使用**HLSLPROGRAM**和**ENDHLSL**关键字来包裹HLSL代码，其原因是在一个Pass中我们可能还会使用其他语言（如CG）。在本教程中，我们会使用HLSL语言，而不是CG语言，一点原因是CG语言已经过时啦，它已经不更新了，HLSL可以说是现在的主流吧。
+HLSL的全称为High-Level Shading Language，在Unity中编写Shader类时，对于所有HLSL程序，我们都比u使用**HLSLPROGRAM**和**ENDHLSL**关键字来包裹HLSL代码，其原因是在一个Pass中我们可能还会使用其他语言（如CG）。在本教程中，我们会使用HLSL语言，而不是CG语言，一点原因是CG语言已经过时啦，它已经不更新了，HLSL可以说是现在的主流吧(URP用的主要也是HLSL）。
+
+在这里顺便唠一下，从我们编写Unity代码到调度GPU执行渲染的大致层级架构吧，我们通过在Unity中编写C#（管线部分）、ShaderLab代码，这些代码会调用下一层的Unity C++层（要知道，Unity的底层是用C++写的），对于渲染部分的代码，这些C++代码就会调用下一层的图形API（Vulkan、OpenGL、Metal等），而这些图形API最后就驱动了GPU去执行渲染的一系列操作。简单来说，**Unity代码->Unity C++层->图形API->GPU**。
+
+好了，接下来让我们继续编写Unlit这个Shader，代码如下所示。
+
+```c#
+Shader "Custom RP/Unlit"
+{
+    Properties {}
+
+    SubShader
+    {
+        Pass {
+            HLSLPROGRAM
+            #pragma vertex UnlitPassVertex
+            #pragma fragment UnlitPassFragment
+            #include "UnlitPass.hlsl"
+            ENDHLSL
+            }
+    }
+}
+```
+
+这一步，我们在Pass中使用HLSLPROGRAM关键字包裹了一段代码，这段代码就是我们需要编写的HLSL代码部分，在其中，我们使用**#pragma**关键字声明了我们的Vertex Shader是“UnlitPassVertex”，Fragment Shader同理。
+
+**pragma**这个词来自希腊语，指一个动作，或者需要做的事情，许多编程语言都使用它来发布特殊的编译器指令。
+
+紧接着，我们需要具体定义UnlitPassVertex和UnlitPassFragment这两个函数，在这里，我们通过**include**关键字来插入一个hlsl文件中的代码内容，在这个hlsl文件中，我们会定义这两个函数。我们是可以直接在pragma下面直接编写这两个函数的，但是考虑代码清晰度等原因，我们会单独使用一个hlsl文件来管理它们。
+
+#### 1.3 HLSL编译保护机制 Include Guard
+
+HLSL文件用于像C#类一样group code，虽然HLSL没有类的概念。对于所有HLSL文件，它们除了代码块的局部作用域之外，只有一个全局作用域，所以一切内容都可以随处访问。
+
+我们再细说一下**include**这个关键字，include会在其位置插入整个hlsl文件的代码，所以如果include同一个文件两次会导致编译错误，为了防止重复include的情况发生，我们在hlsl文件中增加include guard（不太清除中文是什么，总之是一种防止重复的保护机制吧）。
+
+UnlitPass.hlsl文件代码如下。
+
+```c#
+#ifndef CUSTOM_UNLIT_PASS_INCLUDED
+#define CUSTOM_UNLIT_PASS_INCLUDED
+#endif
+```
+该段代码使用了**宏指令**（宏的定义可自行补充，总之其决定了代码编译时的一些规则）控制，它表示如果没有定义CUSTOM_UNLIT_PASS_INCLUDED这一标识符，则对其进行定义，这样在endif之前的代码，只会在第一次定义该标识符的时候被编译。在Shader类的编写中，我们会经常使用到宏指令，我们对其要比较敏感（Shader的编译也是一门学问）。
+
+#### 1.4 着色器函数 Shader Functions
+
+在这一节中，我们在UnlitPass中定义了顶点着色器函数和片段着色器函数，代码如下。
+
+```c#
+#ifndef CUSTOM_UNLIT_PASS_INCLUDED
+#define CUSTOM_UNLIT_PASS_INCLUDED
+
+float4 UnlitPassVertex() : SV_POSITION
+{
+    return 0.0;
+}
+
+float4 UnlitPassFragment() : SV_TARGET
+{
+    return 0.0;
+}
+
+#endif
+```
+
+在UnlitPassVertex中，我们返回一个float4的变量，通过**SV_POSITION**，我们赋予了这个函数返回值的语义（即返回了顶点的位置信息，至于为什么是float4而不是float3可以去看GAMES101前几课关于齐次坐标的讲解）。
+
+在UnlitPassFragment中，我们也返回了一个float4的变量，代表这个像素的颜色值。
+
+这一节代码很简单，但我们需要注意到两个信息，一个是**数据类型**，一个是**着色器语义**。
+
+对于前者，我们在函数中使用float4的类型，除了**float**类型以外，还有**half**类型，两者区别在于浮点数的精度（float精度更高），half类型的存在意义主要是在移动端GPU上通过降低精度来获取性能上的提升。对于移动端开发，通常来说，我们对位置信息和纹理坐标使用float精度，其他信息都是用half精度。而对于桌面端，即使我们使用了half，GPU最后也是会使用float来代替这个half。（除了这两个精度，还有个fixed，通常等价于half）
+
+对于后者，我们可以看到我们在函数命名的大括号后使用了“: XX_XXX”来告诉我们的GPU，该函数的返回值代表了什么意思，这就是**着色器语义**。[Unity官方文档](https://docs.unity3d.com/cn/2021.3/Manual/SL-ShaderSemantics.html)中对其做了如下说明，**编写HLSL着色器程序时，输入和输出变量需要通过语义来表明其“意图”**。语义是HLSL语言中的标准概念，[微软文档](https://learn.microsoft.com/en-us/windows/win32/direct3dhlsl/dx-graphics-hlsl-semantics?redirectedfrom=MSDN)中对其做了如下定义：**语义是附加到着色器输入或输出的字符串，用于传达有关参数预期用途的信息**。对于不同的语义，GPU底层就会对这些数据做不同处理。
+
+#### 1.5 空间变换 Space Transformation
+
 
 #### 参考
 
