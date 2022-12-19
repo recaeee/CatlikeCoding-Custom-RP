@@ -45,6 +45,8 @@
      <Compile Include="Assets\Custom RP\Runtime\CameraRenderer.cs" />
      <Compile Include="Assets\Custom RP\Runtime\CameraRenderer.Editor.cs" />
      <Compile Include="Assets\Custom RP\Runtime\CustomRenderPipelineAsset.cs" />
+     <None Include="Assets\Custom RP\ShaderLibrary\Common.hlsl" />
+     <None Include="Assets\Custom RP\ShaderLibrary\UnityInput.hlsl" />
      <None Include="Assets\Custom RP\Shaders\Unlit.shader" />
      <None Include="Assets\Custom RP\Shaders\UnlitPass.hlsl" />
      <Reference Include="UnityEngine">
@@ -703,6 +705,10 @@
       <Project>{b04c19e5-cbb0-177c-f596-908f80a27f4d}</Project>
       <Name>Unity.VisualScripting.SettingsProvider.Editor</Name>
     </ProjectReference>
+    <ProjectReference Include="Unity.RenderPipelines.Core.Runtime.csproj">
+      <Project>{14285c17-6fd3-f956-22cb-cf15fc0bfe45}</Project>
+      <Name>Unity.RenderPipelines.Core.Runtime</Name>
+    </ProjectReference>
     <ProjectReference Include="Unity.TestTools.CodeCoverage.Editor.OpenCover.Mono.Reflection.csproj">
       <Project>{f7f763f6-5397-7d05-a3d1-855f7e341681}</Project>
       <Name>Unity.TestTools.CodeCoverage.Editor.OpenCover.Mono.Reflection</Name>
@@ -719,6 +725,10 @@
       <Project>{6cb588e8-3cfd-6f2e-85f5-17aab695234c}</Project>
       <Name>Unity.Rider.Editor</Name>
     </ProjectReference>
+    <ProjectReference Include="Unity.RenderPipelines.Core.ShaderLibrary.csproj">
+      <Project>{5825f42a-e750-9751-2df3-b34c0ec4e943}</Project>
+      <Name>Unity.RenderPipelines.Core.ShaderLibrary</Name>
+    </ProjectReference>
     <ProjectReference Include="Unity.TestTools.CodeCoverage.Editor.csproj">
       <Project>{d53054e3-fed1-4338-b756-da07b9796a7f}</Project>
       <Name>Unity.TestTools.CodeCoverage.Editor</Name>
@@ -726,6 +736,10 @@
     <ProjectReference Include="UnityEngine.UI.csproj">
       <Project>{1c0b804b-678f-c674-3f30-4a351c5b135b}</Project>
       <Name>UnityEngine.UI</Name>
+    </ProjectReference>
+    <ProjectReference Include="Unity.RenderPipelines.Core.Editor.csproj">
+      <Project>{f428ccc5-6752-0fb8-a486-080165df8c77}</Project>
+      <Name>Unity.RenderPipelines.Core.Editor</Name>
     </ProjectReference>
     <ProjectReference Include="Unity.VisualScripting.State.csproj">
       <Project>{fadac14a-3cbe-c3c2-37cb-54d3d8ca479d}</Project>

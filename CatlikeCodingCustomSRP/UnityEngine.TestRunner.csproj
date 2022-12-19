@@ -113,10 +113,10 @@
      <Compile Include="Library\PackageCache\com.unity.test-framework@1.1.31\UnityEngine.TestRunner\Utils\CoroutineRunner.cs" />
      <Compile Include="Library\PackageCache\com.unity.test-framework@1.1.31\UnityEngine.TestRunner\NUnitExtensions\UnityTestAssemblyBuilder.cs" />
      <Compile Include="Library\PackageCache\com.unity.test-framework@1.1.31\UnityEngine.TestRunner\TestRunner\Callbacks\PlayerQuitHandler.cs" />
-     <Compile Include="Library\PackageCache\com.unity.test-framework@1.1.31\UnityEngine.TestRunner\NUnitExtensions\IStateSerializer.cs" />
      <Compile Include="Library\PackageCache\com.unity.test-framework@1.1.31\UnityEngine.TestRunner\Assertions\LogAssert.cs" />
      <Compile Include="Library\PackageCache\com.unity.test-framework@1.1.31\UnityEngine.TestRunner\NUnitExtensions\Runner\CompositeWorkItem.cs" />
      <Compile Include="Library\PackageCache\com.unity.test-framework@1.1.31\UnityEngine.TestRunner\NUnitExtensions\Runner\RestoreTestContextAfterDomainReload.cs" />
+     <Compile Include="Library\PackageCache\com.unity.test-framework@1.1.31\UnityEngine.TestRunner\NUnitExtensions\IStateSerializer.cs" />
      <Compile Include="Library\PackageCache\com.unity.test-framework@1.1.31\UnityEngine.TestRunner\NUnitExtensions\TestResultExtensions.cs" />
      <Compile Include="Library\PackageCache\com.unity.test-framework@1.1.31\UnityEngine.TestRunner\TestRunner\Callbacks\PlayModeRunnerCallback.cs" />
      <Compile Include="Library\PackageCache\com.unity.test-framework@1.1.31\UnityEngine.TestRunner\NUnitExtensions\Commands\EnumerableSetUpTearDownCommand.cs" />

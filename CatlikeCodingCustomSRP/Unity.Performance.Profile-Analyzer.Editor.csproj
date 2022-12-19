@@ -57,8 +57,8 @@
      <Compile Include="Library\PackageCache\com.unity.performance.profile-analyzer@1.1.1\Editor\FrameTimeGraph.cs" />
      <Compile Include="Library\PackageCache\com.unity.performance.profile-analyzer@1.1.1\Editor\ProfileAnalyzerExportWindow.cs" />
      <Compile Include="Library\PackageCache\com.unity.performance.profile-analyzer@1.1.1\Editor\ProfileAnalyzer.cs" />
-     <Compile Include="Library\PackageCache\com.unity.performance.profile-analyzer@1.1.1\Editor\ThreadSelection.cs" />
      <Compile Include="Library\PackageCache\com.unity.performance.profile-analyzer@1.1.1\Editor\AssemblyInfo.cs" />
+     <Compile Include="Library\PackageCache\com.unity.performance.profile-analyzer@1.1.1\Editor\ThreadSelection.cs" />
      <Compile Include="Library\PackageCache\com.unity.performance.profile-analyzer@1.1.1\Editor\TimingOptions.cs" />
      <Compile Include="Library\PackageCache\com.unity.performance.profile-analyzer@1.1.1\Editor\ProgressBarDisplay.cs" />
      <Compile Include="Library\PackageCache\com.unity.performance.profile-analyzer@1.1.1\Editor\Units.cs" />

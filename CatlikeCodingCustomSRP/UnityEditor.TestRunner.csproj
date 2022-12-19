@@ -149,8 +149,8 @@
      <Compile Include="Library\PackageCache\com.unity.test-framework@1.1.31\UnityEditor.TestRunner\UnityTestProtocol\UnityTestProtocolStarter.cs" />
      <Compile Include="Library\PackageCache\com.unity.test-framework@1.1.31\UnityEditor.TestRunner\CommandLineTest\ExecutionSettings.cs" />
      <Compile Include="Library\PackageCache\com.unity.test-framework@1.1.31\UnityEditor.TestRunner\TestRunner\Callbacks\EditModeRunnerCallback.cs" />
-     <Compile Include="Library\PackageCache\com.unity.test-framework@1.1.31\UnityEditor.TestRunner\TestLaunchers\EditModeLauncher.cs" />
      <Compile Include="Library\PackageCache\com.unity.test-framework@1.1.31\UnityEditor.TestRunner\CommandLineTest\Executer.cs" />
+     <Compile Include="Library\PackageCache\com.unity.test-framework@1.1.31\UnityEditor.TestRunner\TestLaunchers\EditModeLauncher.cs" />
      <Compile Include="Library\PackageCache\com.unity.test-framework@1.1.31\UnityEditor.TestRunner\Api\TestResultAdaptor.cs" />
      <Compile Include="Library\PackageCache\com.unity.test-framework@1.1.31\UnityEditor.TestRunner\Api\ICallbacksDelegator.cs" />
      <Compile Include="Library\PackageCache\com.unity.test-framework@1.1.31\UnityEditor.TestRunner\TestRun\TestJobData.cs" />
@@ -183,9 +183,9 @@
      <Compile Include="Library\PackageCache\com.unity.test-framework@1.1.31\UnityEditor.TestRunner\CommandLineParser\ICommandLineOption.cs" />
      <Compile Include="Library\PackageCache\com.unity.test-framework@1.1.31\UnityEditor.TestRunner\UnityTestProtocol\TestState.cs" />
      <Compile Include="Library\PackageCache\com.unity.test-framework@1.1.31\UnityEditor.TestRunner\TestLaunchers\PlayerLauncher.cs" />
-     <Compile Include="Library\PackageCache\com.unity.test-framework@1.1.31\UnityEditor.TestRunner\TestLaunchers\PlatformSetup\XboxOnePlatformSetup.cs" />
      <Compile Include="Library\PackageCache\com.unity.test-framework@1.1.31\UnityEditor.TestRunner\Api\Analytics\RunFinishedData.cs" />
      <Compile Include="Library\PackageCache\com.unity.test-framework@1.1.31\UnityEditor.TestRunner\Api\TestStatus.cs" />
+     <Compile Include="Library\PackageCache\com.unity.test-framework@1.1.31\UnityEditor.TestRunner\TestLaunchers\PlatformSetup\XboxOnePlatformSetup.cs" />
      <Compile Include="Library\PackageCache\com.unity.test-framework@1.1.31\UnityEditor.TestRunner\TestLaunchers\PlatformSetup\UwpPlatformSetup.cs" />
      <Compile Include="Library\PackageCache\com.unity.test-framework@1.1.31\UnityEditor.TestRunner\TestRunner\Messages\WaitForDomainReload.cs" />
      <Compile Include="Library\PackageCache\com.unity.test-framework@1.1.31\UnityEditor.TestRunner\TestRun\Tasks\RegisterFilesForCleanupVerificationTask.cs" />

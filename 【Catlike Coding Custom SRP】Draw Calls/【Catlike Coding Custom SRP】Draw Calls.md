@@ -208,8 +208,136 @@ float4 UnlitPassFragment() : SV_TARGET
 
 #### 1.5 空间变换 Space Transformation
 
+在这一节中，我们主要实现的是对顶点Position做一些空间变换，如从模型空间转换到世界空间、从世界空间转换到裁剪空间。关于空间变换这部分知识，可以去看GAMES101,这里不过多展开，讲得非常好。这些函数的代码都比较简单，但是我们更值得注意的是，我们将一系列Pass的输入数据（如摄像机的M、VP矩阵）单独管理在一个UnityInput.hlsl文件中，将通用的空间变换函数管理在一个Common.hlsl文件中。
+
+以下UnityInput.hlsl代码。
+```c#
+//存储Shader中的一些常用的输入数据
+#ifndef CUSTOM_UNITY_INPUT_INCLUDED
+#define CUSTOM_UNITY_INPUT_INCLUDED
+
+float4x4 unity_ObjectToWorld;
+
+float4x4 unity_MatrixVP;
+
+#endif
+```
+
+以下为Common.hlsl代码。
+```c#
+//存储一些常用的函数，如空间变换
+#ifndef CUSTOM_COMMON_INCLUDED
+#define CUSTOM_COMMON_INCLUDED
+
+#include "UnityInput.hlsl"
+
+float3 TransformObjectToWorld(float3 positionOS)
+{
+    return mul(unity_ObjectToWorld,float4(positionOS,1.0)).xyz;
+}
+
+float4 TransformWorldToHClip(float3 positionWS)
+{
+    return mul(unity_MatrixVP,float4(positionWS,1.0));
+}
+
+#endif
+```
+
+通过在UnlitPassVertex函数中调用这两个空间变换函数，我们在Scene视图中就可以看到Unity正确绘制了Unlit材质的Mesh。
+
+<div align=center>
+
+![20221218090513](https://raw.githubusercontent.com/recaeee/PicGo/main/20221218090513.png)
+
+</div>
+
+那我们可能会奇怪，我们在UnityInput.hlsl中只是声明了**unity_ObjectToWorld**和**unity_MatrixVP**，并没有对其进行赋值操作，但是我们从结果可以看出，这两个变换矩阵内已有值，并且是正确的数值。那这些变量是从哪得到的呢？
+
+其实，这些变量被叫做**内置着色器变量**，这些变量的获取是在Unity内置文件中执行的，对于CGPROGRAM着色器，我们不必对其进行特定声明，可以直接使用，但对于HLSLPROGRAM着色器，我们需要自己声明这些变量名来获取当相应的内置变量。
+
+在这里我们可以做一个大胆的尝试，在Unlit.Shader中直接把HLSLPROGRAM关键字替换为CGPROGRAM，然后在UnityInput.hlsl中把两个变换矩阵的声明直接注释掉，我们可以发现结果同上图。而这就是因为CGPROGRAM会自动include一些获取内置着色器变量的文件，而在HLSLPROGRAM中，则需要我们自己声明，更多信息可参考[官方文档对内置着色器变量的说明](https://docs.unity3d.com/cn/2021.3/Manual/SL-UnityShaderVariables.html)。
+
+#### 1.6 SRP核心库 Core Library
+
+<div align=center>
+
+![20221218100330](https://raw.githubusercontent.com/recaeee/PicGo/main/20221218100330.png)
+
+</div>
+
+我们上述编写的两个空间变换函数其实已经被包括在了一个叫**Core RP Pipeline**的Package中，这个Package同样也定义了许多其他我们常用的方法和功能，所以我们使用这个Package代替我们之前编写的两个函数（这些轮子就不用造啦）
+
+<div align=center>
+
+![20221218101044](https://raw.githubusercontent.com/recaeee/PicGo/main/20221218101044.png)
+
+</div>
+
+为了使用库中的空间变换函数，我们需要在Common.hlsl中include它的SpcaceTransform.hlsl文件，但由于Core RP库中使用了**UNITY_MATRIX_M**代替了我们的unity_ObjectToWorld，所以在引入它前我们需要使用宏定义**#define UNITY_MATRIX_M unity_ObjectToWorld**，由此，之后**在编译SpaceTransform.hlsl时会自动使用unity_ObjectToWorld来代替UNITY_MATRIX_X**，其他几个变量同理（至于为什么变量名不同，之后会说）。
+
+这里，我也遇到了使用Unity2021的坑，因为其对应Core RP Library为12.1.7，所以有两个新增的变量(UNITY_PREV_MATRIX_M和I_M)需要宏定义，但是我在网上并没找到其确切解释，只能猜测一下进行定义。
+
+以下为Common.hlsl代码。
+
+```c#
+//存储一些常用的函数，如空间变换
+#ifndef CUSTOM_COMMON_INCLUDED
+#define CUSTOM_COMMON_INCLUDED
+
+#include "Packages/com.unity.render-pipelines.core/ShaderLibrary/Common.hlsl"
+#include "UnityInput.hlsl"
+
+// float3 TransformObjectToWorld(float3 positionOS)
+// {
+//     return mul(unity_ObjectToWorld,float4(positionOS,1.0)).xyz;
+// }
+//
+// float4 TransformWorldToHClip(float3 positionWS)
+// {
+//     return mul(unity_MatrixVP,float4(positionWS,1.0));
+// }
+//将Unity内置着色器变量转换为SRP库需要的变量
+#define UNITY_MATRIX_M unity_ObjectToWorld
+#define UNITY_MATRIX_I_M unity_WorldToObject
+#define UNITY_MATRIX_V unity_MatrixV
+#define UNITY_MATRIX_VP unity_MatrixVP
+#define UNITY_MATRIX_P glstate_matrix_projection
+//使用2021版本的坑，我们还需要定义两个PREV标识符，才不会报错，但这两个变量具体代表什么未知
+#define UNITY_PREV_MATRIX_M unity_ObjectToWorld
+#define UNITY_PREV_MATRIX_I_M unity_WorldToObject
+//我们直接使用SRP库中已经帮我们写好的函数
+#include "Packages/com.unity.render-pipelines.core/ShaderLibrary/SpaceTransforms.hlsl"
+
+#endif
+```
+
+以下为UnityInput.hlsl代码。
+
+```c#
+//存储Shader中的一些常用的输入数据
+#ifndef CUSTOM_UNITY_INPUT_INCLUDED
+#define CUSTOM_UNITY_INPUT_INCLUDED
+
+float4x4 unity_ObjectToWorld;
+float4x4 unity_WorldToObject;
+real4 unity_WorldTransformParams;
+
+float4x4 unity_MatrixVP;
+float4x4 unity_MatrixV;
+float4x4 glstate_matrix_projection;
+
+#endif
+```
+
+在这节，我们通过使用Core RP Library免去了一些通用函数的编写，同时为了编译不报错，需要对一些变量使用宏定义。
+
+#### 1.7 颜色 Color
+
+在这一节，我们的目的是让每个Unlit材质拥有自己的颜色，因此我们在HLSLPROGRAM的区域中声明一个float4类型的uniform变量叫**_BaseColor**，我们在UnlitPassFragment函数中返回这个颜色值。同时，我们需要让_BaseColor在材质的Inspector窗口中可编辑，我们需要在Unlit.Shader的Properties代码块中声明同名的_BaseColor变量，并赋予其在Inspector视图中的名字，同时赋予其默认值。
 
 #### 参考
 
 1. 《Shader入门精要》——冯乐乐
 2. https://qxsoftware.github.io/Unity-Rendering-Order.html
+3. 涩图来自wlop大大 https://space.bilibili.com/26633150
