@@ -44,7 +44,7 @@
 
 首先来唠唠Unity中的Shader吧。
 
-我们在Unity中编写Shader使用的语法是Unity特有的**ShaderLab**，但它其实就是多种Shader语言（例如在其中可以使用HLSL、CG语言）的混合版，再加上一些特定的语法框架。
+我们在Unity中编写Shader使用的语法是Unity特有的**ShaderLab**，但它其实就是多种Shader语言（例如在其中可以使用HLSL、CG语言）的混合版，再加上一些特定的语法框架。如果想了解ShaderLab更底层的知识，请务必看下[这篇文章](https://zhuanlan.zhihu.com/p/400470713)，这个作者非常强，其他文章也值得一看。其中说到ShaderLab的作用，**ShaderLab是Unity构建的一种方便开发者做跨平台Shading开发的语言体系**，因为其底层会将我们所写的.Shader文件先使用FXC编译器编译成DXBC（一种可以直接被DX设备使用的二进制语言），如果目标平台不是DX，则会更进一步使用HLSLcc（交叉编译）将DXBC输出到对应平台（如转换成GLSL、Metal等）。
 
 其实通常来说着色器就是Shader（在本文中也会这么认为，不做明确区分，但是还是要提一下），毕竟英文翻译过来就是这样。但是Unity对于Shader组织了一种新的数据类型，即**Shader对象**，我们在Unity中所编写的 **.shader文件**，其实是在编写**Shader类**，它和通常意义上的Shader最大的区别在于**一个Shader类之中可以定义多个通俗意义上的Shader（着色器程序）**，也就是多个**SubShader**，而这些SubShader其实才是我们通常所说的Shader。根据SubShader的官方说明，我们可以显而易见知道Unity组织Shader类这一数据结构的目的就在于**兼容不同的硬件、渲染管线和运行时设置**。在渲染管线实际运行时，Unity就会将我们编写的Shader类实例化成**Shader对象**使用。
 
@@ -334,7 +334,60 @@ float4x4 glstate_matrix_projection;
 
 #### 1.7 颜色 Color
 
-在这一节，我们的目的是让每个Unlit材质拥有自己的颜色，因此我们在HLSLPROGRAM的区域中声明一个float4类型的uniform变量叫**_BaseColor**，我们在UnlitPassFragment函数中返回这个颜色值。同时，我们需要让_BaseColor在材质的Inspector窗口中可编辑，我们需要在Unlit.Shader的Properties代码块中声明同名的_BaseColor变量，并赋予其在Inspector视图中的名字，同时赋予其默认值。
+在这一节，我们的目的是让每个Unlit材质拥有自己的颜色，因此我们在HLSLPROGRAM的区域中声明一个float4类型的uniform变量叫_BaseColor，我们在UnlitPassFragment函数中返回这个颜色值。同时，我们需要让_BaseColor在材质的Inspector窗口中可编辑，我们需要在Unlit.Shader的Properties代码块中声明同名的_BaseColor变量，并赋予其在Inspector视图中的名字，同时赋予其默认值。
+
+我们在Unlit.Shader中的代码如下。
+
+```c#
+Shader "Custom RP/Unlit"
+{
+    Properties
+    {
+        //[可选：特性]变量名(Inspector上的文本,类型名) = 默认值
+        //[optional: attribute] name("display text in Inspector", type name) = default value
+        _BaseColor("Color",Color) = (1.0,1.0,1.0,1.0)
+    }
+
+    SubShader
+    {
+        Pass
+        {
+            HLSLPROGRAM
+            #pragma vertex UnlitPassVertex
+            #pragma fragment UnlitPassFragment
+            #include "UnlitPass.hlsl"
+            ENDHLSL
+        }
+    }
+}
+```
+
+在这里，我们在Shader的Properties中中定义了_BaseColor的一个属性，类型为**Color**（Color类型在着色器代码中会映射到float4，同时在材质Inspector上显示一个拾色器）。这个_BaseColor会在该Shader的HLSL代码中映射为同名为_BaseColor的float4变量。
+
+这一节同样比较简单，更多关于Properties的信息可以参考[官方文档](https://docs.unity3d.com/cn/current/Manual/SL-Properties.html)。接下来就要正式进入批处理了。
+
+#### 2 批处理 Batching
+
+任何一次Draw Call都需要CPU和GPU之间的通信，如果有大量的数据需要从CPU传递到GPU，那么就会造成GPU闲置的情况（渲染完当前任务后等待CPU传递下一帧数据）。同时，CPU在传递数据的时候是不能做其他事情的。这两个问题都会造成帧率下降。在目前，我们的管线渲染的方法是这样的：**每一个物体对应一个Draw Call**。这样的方法显然是低效且不聪明的，一旦我们数据量大起来，性能是吃不消的。
+
+那么如何提升性能呢？那就需要使用到**批处理（Batching）**技术，而在我看来了，批处理的思路就在于：**归纳出不同数据之间的特性（相似性），将相似（或者冗余）的数据合并或者一次传递给GPU**。也就是说，之前我们在Draw Call时，根本没考虑每个Object之间的关系，如果有两个一模一样的小球，那我们也会当成完全不同的两个小球进行两次Draw Call。
+
+更具体来说，如下图，我在一个场景中拜访了3种颜色的小球，一共**17个小球**，从**Stats**界面中，我们可以看到进行了**18次Batches**（即18次Draw Call，多的一次为天空盒的绘制），每次Draw Call传递一个小球的所有数据，显然这是不聪明的。
+
+<div align=center>
+
+![20221219213428](https://raw.githubusercontent.com/recaeee/PicGo/main/20221219213428.png)
+
+</div>
+
+#### 2.1 SRP批处理 SRP Batcher
+
+终于到了一个重点，但在讲SRP Batcher之前，我们明确下我们优化Draw Call的两个关键点：1，减少Draw Call的次数；2，减少一次Draw Call**伴随的**传递数据量（再强调一次，Draw Call本身只是一个指令，并没有多大消耗，实际消耗在于Draw Call之前的**数据加载到GPU、设置渲染状态**。）而首先我必须提及的一点是，**SRP Batcher并不会减少Draw Call的数量！！！**，SRP Batcher对Draw Call的优化完全是针对第二点的，即**减少一次Draw Call伴随的传递数据量**。
+
+在具体编写SRP Batcher的代码之前，我觉得先理解它的工作原理比较重要。
+
+![20221219215340](https://raw.githubusercontent.com/recaeee/PicGo/main/20221219215340.png)
+
 
 #### 参考
 
