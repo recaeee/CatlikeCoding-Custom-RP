@@ -382,9 +382,37 @@ Shader "Custom RP/Unlit"
 
 #### 2.1 SRP批处理 SRP Batcher
 
-终于到了一个重点，但在讲SRP Batcher之前，我们明确下我们优化Draw Call的两个关键点：1，减少Draw Call的次数；2，减少一次Draw Call**伴随的**传递数据量（再强调一次，Draw Call本身只是一个指令，并没有多大消耗，实际消耗在于Draw Call之前的**数据加载到GPU、设置渲染状态**。）而首先我必须提及的一点是，**SRP Batcher并不会减少Draw Call的数量！！！**，SRP Batcher对Draw Call的优化完全是针对第二点的，即**减少一次Draw Call伴随的传递数据量**。
+重点来啦！！！我们一点一点理解。
 
-在具体编写SRP Batcher的代码之前，我觉得先理解它的工作原理比较重要。
+首先我们需要了解什么是Draw Call、Batch、SetPass Call（[参考文章](https://zhuanlan.zhihu.com/p/76562300)）。
+
+对于我们已经见过的Draw Call，我们再提一次Draw Call的定义为**CPU调用图像编程接口以命令GPU进行渲染操作**。以及，DrawCall本身只是一条指令，并不怎么耗时。
+
+我们知道在发生一次Draw Call之前，CPU需要做两件事：1，把数据加载到显存，即把网格顶点、法线、纹理等加载到显存中；2，设置渲染状态，包括定义网格使用哪个纹理、哪个材质，还有光源属性等。
+
+那么我们理解了，GPU想要进行一次渲染操作（Draw Call)，粗略看来需要两类信息：1，Mesh顶点；2，材质信息。（实际肯定更复杂）
+
+对于第一类信息，CPU会在Draw Call前提交一次网格数据。Batch的定义...
+
+对于第二类信息，材质信息我们可以把它理解成渲染状态，CPU会在Draw Call前进行一次设置渲染状态。设置渲染状态流程：CPU首先会**判断当前GPU中当前渲染状态是否为需要的渲染状态**，如果是，则不用更改渲染状态，完成设置；如果不是，则设置为新的渲染状态，也叫做**更换渲染状态**，而更换渲染状态也就叫做**SetPass Call**。对于SetPass Call我们必须知道的一点是，**SetPass Call非常耗时！！！**
+
+到此为止，我们就知道了Draw Call、Batch、（耗时的）SetPass Call分别都是什么。
+
+而**SRP Batcher的作用就是减少耗时的SetPass Call**，也就是说SRP Batcher并不会减少Draw Call次数，而是减少每次Draw Call触发SetPass Call的可能性。而SRP Batcher之所以能够实现的大功臣就是CBUFFER。
+
+**CBUFFER**，也就是constant buffer。我对CBUFFER的认识比较浅薄，具体大家可以参考[这篇文章](https://zhuanlan.zhihu.com/p/35830868)。在我的理解里，CBUFFER就是GPU中在不同渲染阶段（比如顶点着色器和片元着色器）都能访问到的常量缓冲区。对于要渲染的每个Object，像是其Mesh顶点数据，我们只需要在进入顶点着色器的时候知道他们就够了（出了顶点着色器就变成了片元），Mesh顶点数据就相当于**一次性数据**，而像Object的Model矩阵这种数据，我们可能在顶点着色器需要获取到（用来将顶点转换到世界空间），同时在片元着色器我们也可能用到，这些数据就会放到**常量缓冲区**（也就是CBUFFER）里。**对于CBUFFER,它们只在需要改变时才更改，我们应该尽量避免更新大的常量缓冲区中小部分数据(更新一次CBUFFER十分昂贵)**。
+
+我们知道一次DrawRenderers会引发多次Draw Call，每次Draw Call会伴随着Set Pass Call。如下图左半部分（先不用看最上面的SetShaderPass）所示，我们可以看到一个**不使用SRP Batcher时一次DrawRenderers发生的行为**：**对于每个Object**，1，在RAM中收集Builtin Data(Object的变换矩阵什么的），填充到一个Object CBUFFER；2，上传Object CBUFFER到GPU的常量缓冲区中；3，在RAM中收集材质信息，填充到一个Material CBUFFER；4，上传Materi CBUFFER到GPU的常量缓冲区中；5，添加指令“绑定这个Material CBUFFER”；6，添加指令“绑定这个Object CBUFFER”;7,调用Draw Call。从上述流程看出，前4步对应了Set Pass Call中**把数据（这里是材质、矩阵的一些数据）加载到显存**，而5、6步就对应了Set Pass Call中**设置渲染状态**（在5、6步中“绑定”的含义在我看来就是告诉GPU在下一次的绘制Mesh时使用哪些数据）。
+
+比喻一下这个流程就是，我给你一颗苹果，让你切成两半，我再给你一颗苹果，让你切成两半，我再再给你一颗苹果，让你切成两半。
+
+而SRP Batcher的流程就如下右图所示，对于一次Draw Renderers发生的行为：1，将一系列材质信息组成多个persistent Material CBUFFER一次加载到GPU的常量缓冲区中，再将一系列Object各自的一些信息（offset Object data）组成一个large CBUFFER一次加载到GPU的常量缓冲区中；**对于每个Object**，2，CPU添加指令“绑定这个persistent Material CBUFFER”；3，CPU添加指令“绑定这个offset Object data”。（注意，SRP Batcher一次将所有的材质、都提交到了显存中，即第一步）
+
+<div align=center>
+
+![20221220205859](https://raw.githubusercontent.com/recaeee/PicGo/main/20221220205859.png)
+
+</div>
 
 ![20221219215340](https://raw.githubusercontent.com/recaeee/PicGo/main/20221219215340.png)
 
