@@ -384,7 +384,7 @@ Shader "Custom RP/Unlit"
 
 重点来啦！！！我们一点一点理解。
 
-首先我们需要了解什么是Draw Call、Batch、SetPass Call（[参考文章](https://zhuanlan.zhihu.com/p/76562300)）。
+首先我们需要了解什么是Draw Call、SetPass Call（[参考文章](https://zhuanlan.zhihu.com/p/76562300)）。
 
 对于我们已经见过的Draw Call，我们再提一次Draw Call的定义为**CPU调用图像编程接口以命令GPU进行渲染操作**。以及，DrawCall本身只是一条指令，并不怎么耗时。
 
@@ -392,21 +392,29 @@ Shader "Custom RP/Unlit"
 
 那么我们理解了，GPU想要进行一次渲染操作（Draw Call)，粗略看来需要两类信息：1，Mesh顶点；2，材质信息。（实际肯定更复杂）
 
-对于第一类信息，CPU会在Draw Call前提交一次网格数据。Batch的定义...
+对于第一类信息，CPU会在Draw Call前提交一次网格数据(顶点、顶点颜色、法线等）。
 
 对于第二类信息，材质信息我们可以把它理解成渲染状态，CPU会在Draw Call前进行一次设置渲染状态。设置渲染状态流程：CPU首先会**判断当前GPU中当前渲染状态是否为需要的渲染状态**，如果是，则不用更改渲染状态，完成设置；如果不是，则设置为新的渲染状态，也叫做**更换渲染状态**，而更换渲染状态也就叫做**SetPass Call**。对于SetPass Call我们必须知道的一点是，**SetPass Call非常耗时！！！**
 
-到此为止，我们就知道了Draw Call、Batch、（耗时的）SetPass Call分别都是什么。
+到此为止，我们就知道了Draw Call、（耗时的）SetPass Call分别都是什么。
 
-而**SRP Batcher的作用就是减少耗时的SetPass Call**，也就是说SRP Batcher并不会减少Draw Call次数，而是减少每次Draw Call触发SetPass Call的可能性。而SRP Batcher之所以能够实现的大功臣就是CBUFFER。
+而**SRP Batcher的作用就是尽可能减少耗时的SetPass Call**，也就是说SRP Batcher并不会减少Draw Call次数，而是减少每次Draw Call触发SetPass Call的可能性。而SRP Batcher之所以能够实现的大功臣就是CBUFFER。
 
-**CBUFFER**，也就是constant buffer。我对CBUFFER的认识比较浅薄，具体大家可以参考[这篇文章](https://zhuanlan.zhihu.com/p/35830868)。在我的理解里，CBUFFER就是GPU中在不同渲染阶段（比如顶点着色器和片元着色器）都能访问到的常量缓冲区。对于要渲染的每个Object，像是其Mesh顶点数据，我们只需要在进入顶点着色器的时候知道他们就够了（出了顶点着色器就变成了片元），Mesh顶点数据就相当于**一次性数据**，而像Object的Model矩阵这种数据，我们可能在顶点着色器需要获取到（用来将顶点转换到世界空间），同时在片元着色器我们也可能用到，这些数据就会放到**常量缓冲区**（也就是CBUFFER）里。**对于CBUFFER,它们只在需要改变时才更改，我们应该尽量避免更新大的常量缓冲区中小部分数据(更新一次CBUFFER十分昂贵)**。
+**CBUFFER**，也就是Constant Buffer。我对CBUFFER的认识比较浅薄，具体大家可以参考[这篇文章](https://zhuanlan.zhihu.com/p/35830868)和[这篇文章](https://zhuanlan.zhihu.com/p/106234207)。"Constant"的含义是该Buffer在着色器程序执行期间其值是恒定的，而CPU可以对该Buffer进行修改。其用处主要是存储对单个物体或对一次绘制中所有顶点都相同的量（比如物体的变换矩阵等），并提供给GPU快速访问。它避免了多次重复传输这些较小的信息给GPU，只在需要更新的时候更新。从硬件层面看，GPU中一般会有一个64KB的常量寄存器用于专门存放Constant Buffer。
 
-我们知道一次DrawRenderers会引发多次Draw Call，每次Draw Call会伴随着Set Pass Call。如下图左半部分（先不用看最上面的SetShaderPass）所示，我们可以看到一个**不使用SRP Batcher时一次DrawRenderers发生的行为**：**对于每个Object**，1，在RAM中收集Builtin Data(Object的变换矩阵什么的），填充到一个Object CBUFFER；2，上传Object CBUFFER到GPU的常量缓冲区中；3，在RAM中收集材质信息，填充到一个Material CBUFFER；4，上传Materi CBUFFER到GPU的常量缓冲区中；5，添加指令“绑定这个Material CBUFFER”；6，添加指令“绑定这个Object CBUFFER”;7,调用Draw Call。从上述流程看出，前4步对应了Set Pass Call中**把数据（这里是材质、矩阵的一些数据）加载到显存**，而5、6步就对应了Set Pass Call中**设置渲染状态**（在5、6步中“绑定”的含义在我看来就是告诉GPU在下一次的绘制Mesh时使用哪些数据）。
+我们知道一次DrawRenderers会引发多次Draw Call，每次Draw Call可能会伴随着Set Pass Call（切换渲染状态）。如下图左半部分所示，我们可以看到一个**不使用SRP Batcher时一次DrawRenderers时CPU的（部分）行为**。（说“部分”是因为图中似乎没有提到Mesh数据的提交）
 
-比喻一下这个流程就是，我给你一颗苹果，让你切成两半，我再给你一颗苹果，让你切成两半，我再再给你一颗苹果，让你切成两半。
+1. 设置SetShaderPass(SetPass Call)，即准备GPU要绘制的物体的材质数据（耗时）。
+2. 在RAM中收集Builtin Data(Object的变换矩阵什么的），填充到一个Object CBUFFER（在这里虽然使用了CBuffer，但没利用其能长时间驻留的特性）；
+3. 上传Object CBUFFER到GPU的常量缓冲区中；
+4. 在RAM中收集材质信息，填充到一个Material CBUFFER（类似第二步）；
+5. 上传Materi CBUFFER到GPU的常量缓冲区中；
+6. 添加指令“绑定这个Material CBUFFER”；
+7. 添加指令“绑定这个Object CBUFFER”;
+8. 添加指令Draw Call。
+9. 判断下一个要绘制的物体是否与上一个物体使用**同一材质**，如果是，转2；如果不是，转1。
 
-而SRP Batcher的流程就如下右图所示，对于一次Draw Renderers发生的行为：1，将一系列材质信息组成多个persistent Material CBUFFER一次加载到GPU的常量缓冲区中，再将一系列Object各自的一些信息（offset Object data）组成一个large CBUFFER一次加载到GPU的常量缓冲区中；**对于每个Object**，2，CPU添加指令“绑定这个persistent Material CBUFFER”；3，CPU添加指令“绑定这个offset Object data”。（注意，SRP Batcher一次将所有的材质、都提交到了显存中，即第一步）
+从第9步可以看出，如果我连续绘制多个**不同材质**的物体，那么就会经常触发“1.SetShaderPass”，而第1步就是非常耗时的SetPass Call。
 
 <div align=center>
 
@@ -414,8 +422,117 @@ Shader "Custom RP/Unlit"
 
 </div>
 
-![20221219215340](https://raw.githubusercontent.com/recaeee/PicGo/main/20221219215340.png)
+而SRP Batcher的流程就图中右半部分所示，对于一次Draw Renderers发生时CPU的（部分）行为如下。
 
+1. 设置SetShaderPass(SetPass Call)，即准备GPU要绘制的物体的材质数据（耗时）。
+
+2. 将一系列材质信息组成多个persistent Material CBUFFER一次加载到GPU的常量缓冲区中，再将一系列Object各自的一些信息（offset Object data）组成一个large CBUFFER一次加载到GPU的常量缓冲区中。
+
+3. 添加指令“绑定这个persistent Material CBUFFER”。
+   
+4. 添加指令“绑定这个offset Object data”。
+
+5. 添加指令Draw Call。
+   
+6. 判断下一个要绘制的物体是否与上一个物体使用**同一着色器变体**，如果是，转2；如果不是，转1。
+
+在DrawRenderers开始时，SRP Batcher一次将本次DrawRenderers中所有（支持SRP Batcher）的材质和每个物体的部分信息（如变换矩阵）都提交到了显存中，然后CPU会在每次发送DrawCall前告诉GPU本次绘制需要使用哪一部分CBuffer。
+
+从图中直观可以看出两点：**1，SRP Batcher减少了每次DrawCall前配置CBuffer的成本**（从准备和上传CBuffer变为了切换绑定CBuffer）；**2，降低了SetPass Call触发的的可能性**（触发条件从不同材质变为了不同着色器变体）。
+
+以下为SRP Batcher的数据传递示意图。
+
+<div align=center>
+
+![20221225211607](https://raw.githubusercontent.com/recaeee/PicGo/main/20221225211607.png)
+
+</div>
+
+对于SRP Batcher，其底层逻辑可参考[《【Unity】SRP底层渲染流程及原理》](https://zhuanlan.zhihu.com/p/378781638)，我认为的很重要的一点就在于：对于一次DrawRenderers，Unity会遍历所有要绘制的物体（Renderer），然后收集所有出现的材质，整理成一个大的CBuffer，一次传递给GPU的常量缓冲区，同时对这些物体的一些信息（Model矩阵等）也整理成一个大CBuffer，一次传递给GPU的常量缓冲区。
+
+（到了这里我感觉我对SRP Batcher讲的有些混乱了，其中看了一些GPU硬件层面的知识，感觉牵扯到很多知识，我也不是很有把握，如果讲得不对，请多批评指正。我感觉SRP Batcher表面看起来是个很简单的东西，但其实背后原理也挺复杂的。）
+
+对于理论部分，姑且写这么多了，接下来进入实战吧。
+
+为了让我们编写的Unlit.Shader支持SRP Batcher，我们需要把Shader中Properties部分的变量在**HLSL代码段中**用名为**UnityPerMaterial**的CBUFFER段包裹（即定义Material CBUFFER的数据结构），再用名为**UnityPerDraw**的CUBBFER段包裹Shader输入数据中物体的一些变换矩阵（即定义Per Object large buffer中每一小段的结构）。
+
+UnlitPass.hlsl文件代码如下。
+
+```c#
+#ifndef CUSTOM_UNLIT_PASS_INCLUDED
+#define CUSTOM_UNLIT_PASS_INCLUDED
+
+#include "../ShaderLibrary/Common.hlsl"
+
+//使用Core RP Library的CBUFFER宏指令包裹材质属性，让Shader支持SRP Batcher，同时在不支持SRP Batcher的平台自动关闭它。
+//CBUFFER_START后要加一个参数，参数表示该C buffer的名字(Unity内置了一些名字，如UnityPerMaterial，UnityPerDraw。
+CBUFFER_START(UnityPerMaterial)
+float4 _BaseColor;
+CBUFFER_END
+
+float4 UnlitPassVertex(float3 positionOS : POSITION) : SV_POSITION
+{
+    float3 positionWS = TransformObjectToWorld(positionOS.xyz);
+    return TransformWorldToHClip(positionWS);
+}
+
+float4 UnlitPassFragment() : SV_TARGET
+{
+    return _BaseColor;
+}
+
+#endif
+```
+
+UnityInput.hlsl文件带如下。
+
+```c#
+//存储Shader中的一些常用的输入数据
+#ifndef CUSTOM_UNITY_INPUT_INCLUDED
+#define CUSTOM_UNITY_INPUT_INCLUDED
+
+//这三个变量也使用CBUFFER，使用UnityPerDraw命名该Buffer（UnityPerDraw为Unity内置好的名字）
+CBUFFER_START(UnityPerDraw)
+float4x4 unity_ObjectToWorld;
+float4x4 unity_WorldToObject;
+//在定义（UnityPerDraw）CBuffer时，因为Unity对一组相关数据都归到一个Feature中，即使我们没用到unity_LODFade，我们也需要放到这个CBuffer中来构造一个完整的Feature
+//如果不加这个unity_LODFade，不能支持SRP Batcher
+float4 unity_LODFade;
+real4 unity_WorldTransformParams;
+CBUFFER_END
+
+float4x4 unity_MatrixVP;
+float4x4 unity_MatrixV;
+float4x4 glstate_matrix_projection;
+
+#endif
+```
+
+关于CBUFFER的命名，可参考文章[《Unity ConstantBuffer的一些解析和注意》](https://zhuanlan.zhihu.com/p/137455866)。简单来说，Unity内置了一些CBUFFER的名字，UnityPerMaterial用于所有材质相关的数据（通常是Properties中所有属性），UnityPerDraw用于所有Unity内置引擎变量（文中是这么说的，但我目前根据其名字理解为对于每个Object被绘制时各自的一些数据），对SRP Bathcer来说，UnityPerDraw中所有的变量如下图所示（图片截取自[视频](https://www.bilibili.com/video/BV1M54y1572J/?t=2673&vd_source=ff0e8ecb1d7ea963eef228f6c1cc6431))。
+
+<div align=center>
+
+![20221225215318](https://raw.githubusercontent.com/recaeee/PicGo/main/20221225215318.png)
+
+</div>
+
+同时上图也给出了所有block feature的组成，我们在定义UnityPerDraw这个CBUFFER时需要注意，**所有变量在CBUFFER中都必须以组为单位被定义**，意味着CBUFFER中出现的一个变量其对应Block Feature中所有变量都需要同时出现。
+
+此时，我们就支持了SRP Batcher，我们再抓一次帧看下绘制过程。
+
+<div align=center>
+
+![20221225220012](https://raw.githubusercontent.com/recaeee/PicGo/main/20221225220012.png)
+
+</div>
+
+从图中可以看出，Frame Debuffer将17个使用同个Unlit.Shader但不同材质（不同颜色）的小球的绘制都合并到了一个叫**SRP Batch**的标签中，同时其父标签从原本的RenderLoop.Draw变为了**RenderLoop.DrawSRPBatcher**。从右侧的详细信息可以看到，本次SRP Batch中一共**包括了17次Draw Call**（即17个小球），同时下方还会显示一些合批的相关提示信息。
+
+#### 2.2 更多颜色 Many Colors
+
+在2.1啰嗦了这么多，再简单概括下SRP Batcher的工作流程，即将一些数据（材质、每个物体的变换矩阵等）缓存在GPU显存（常量缓冲区）中，在每次Draw Call时使用一个偏移找到正确的内存地址，得到这些数据用于绘制。（其背后原理并不简单啊，好难~）
+
+接下来，来看一种情况，如果我们需要很多不同颜色的小球，那我们就必须得为每一个颜色都单独创建一个材质，这显然并不方便。
 
 #### 参考
 
