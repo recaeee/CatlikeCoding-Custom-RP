@@ -9,16 +9,25 @@
 // float4 _BaseColor;
 // CBUFFER_END
 
+//在Shader的全局变量区定义纹理的句柄和其采样器，通过名字来匹配
+TEXTURE2D(_BaseMap);
+SAMPLER(sampler_BaseMap);
+
 //为了使用GPU Instancing，每实例数据要构建成数组,使用UNITY_INSTANCING_BUFFER_START(END)来包裹每实例数据
 UNITY_INSTANCING_BUFFER_START(UnityPerMaterial)
+    //纹理坐标的偏移和缩放可以是每实例数据
+    UNITY_DEFINE_INSTANCED_PROP(float4,_BaseMap_ST)
     //_BaseColor在数组中的定义格式
     UNITY_DEFINE_INSTANCED_PROP(float4,_BaseColor)
+    //透明度测试阈值
+    UNITY_DEFINE_INSTANCED_PROP(float,_Cutoff)
 UNITY_INSTANCING_BUFFER_END(UnityPerMaterial)
 
 //使用结构体定义顶点着色器的输入，一个是为了代码更整洁，一个是为了支持GPU Instancing（获取object的index）
 struct Attributes
 {
     float3 positionOS:POSITION;
+    float2 baseUV:TEXCOORD0;
     //定义GPU Instancing使用的每个实例的ID，告诉GPU当前绘制的是哪个Object
     UNITY_VERTEX_INPUT_INSTANCE_ID
 };
@@ -28,6 +37,7 @@ struct Attributes
 struct Varyings
 {
     float4 positionCS:SV_POSITION;
+    float2 baseUV:VAR_BASE_UV;
     //定义每一个片元对应的object的唯一ID
     UNITY_VERTEX_INPUT_INSTANCE_ID
 };
@@ -41,6 +51,9 @@ Varyings UnlitPassVertex(Attributes input)
     UNITY_TRANSFER_INSTANCE_ID(input,output);
     float3 positionWS = TransformObjectToWorld(input.positionOS);
     output.positionCS = TransformWorldToHClip(positionWS);
+    //应用纹理ST变换
+    float4 baseST = UNITY_ACCESS_INSTANCED_PROP(UnityPerMaterial,_BaseMap_ST);
+    output.baseUV = input.baseUV * baseST.xy + baseST.zw;
     return output;
 }
 
@@ -48,8 +61,19 @@ float4 UnlitPassFragment(Varyings input) : SV_TARGET
 {
     //从input中提取实例的ID并将其存储在其他实例化宏所依赖的全局静态变量中
     UNITY_SETUP_INSTANCE_ID(input);
+    //获取采样纹理颜色
+    float4 baseMap = SAMPLE_TEXTURE2D(_BaseMap,sampler_BaseMap,input.baseUV);
     //通过UNITY_ACCESS_INSTANCED_PROP获取每实例数据
-    return UNITY_ACCESS_INSTANCED_PROP(UnityPerMaterial, _BaseColor);
+    float4 baseColor =  UNITY_ACCESS_INSTANCED_PROP(UnityPerMaterial, _BaseColor);
+    float4 base = baseMap * baseColor;
+
+    //只有在_CLIPPING关键字启用时编译该段代码
+    #if defined(_CLIPPING)
+    //clip函数的传入参数如果<=0则会丢弃该片元
+    clip(base.a - UNITY_ACCESS_INSTANCED_PROP(UnityPerMaterial, _Cutoff));
+    #endif
+    
+    return base;
 }
 
 #endif

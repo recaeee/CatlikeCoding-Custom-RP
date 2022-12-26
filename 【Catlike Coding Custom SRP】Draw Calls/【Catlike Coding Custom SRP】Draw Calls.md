@@ -1,6 +1,6 @@
 # 【Catlike Coding Custom SRP学习之旅——2】Draw Calls
 #### 写在前面
-很高兴第一章有许多人看，因此我也不能懈怠，抓紧时间开始弄第二章。同时，这两天还在考虑毕设选题的事情，我在犹豫是搭建SRP+风格化渲染还是在URP的基础上直接着重开展风格化渲染（渲染的风格偏PBR+NPR的结合。前者由于搭建SRP会花大量的时间，所以工作量会比较大，而后者直接使用URP，但这样对管线的改造可能就会比较少，更多的时间会花在制作材质上。关于这方面我也问了大佬前辈，目前考虑的还是前者，肝起来肝起来~
+很高兴第一章有许多人看，因此我也不能懈怠，抓紧时间开始弄第二章（很想这么说，但后来因为实习+阳了，第二章拖得有点久了）。同时，这两天还在考虑毕设选题的事情，我在犹豫是搭建SRP+风格化渲染还是在URP的基础上直接着重开展风格化渲染（渲染的风格偏PBR+NPR的结合。前者由于搭建SRP会花大量的时间，所以工作量会比较大，而后者直接使用URP，但这样对管线的改造可能就会比较少，更多的时间会花在制作材质上。关于这方面我也问了大佬前辈，目前考虑的还是前者，肝起来肝起来~
 
 以下是原教程链接与我的Github工程（Github上会实时同步最新进度）：
 
@@ -722,8 +722,520 @@ float4 UnlitPassFragment(Varyings input) : SV_TARGET
 
 #### 2.4 绘制更多实例网格 Drawing Many Instanced Meshes
 
+<div align=center>
+
+![20221226184140](https://raw.githubusercontent.com/recaeee/PicGo/main/20221226184140.png)
+
+</div>
+
+GPU Instancing在一次绘制上百个相同物体的时候具有很大的优势，但是我们很少会手动摆放这样上百个物体，一般来说，GPU Instancing在程序化生成树木、草这些东西的时候很好用，在这里我们也试着去随机产生一些小球。
+
+我们创建一个MeshBall组件脚本，这个随机生成小球的脚本很简单，注意我们在这里没有选择去创建每个小球的GameObject，而是选择只提供1个Mesh、1个材质、1023个Transform（每实例数据）、1023个颜色（每实例数据）的方式去**无GameObject化地绘制小球**。
+
+MeshBall.cs代码如下所示。
+
+```c#
+using System;
+using UnityEngine;
+using Random = UnityEngine.Random;
+
+
+public class MeshBall : MonoBehaviour
+{
+    //和之前一样，使用int类型的PropertyId代替属性名称
+    private static int baseColorId = Shader.PropertyToID("_BaseColor");
+
+    //GPU Instancing使用的Mesh
+    [SerializeField] private Mesh mesh = default;
+    //GPU Instancing使用的Material
+    [SerializeField] private Material material = default;
+    
+    //我们可以new 1000个GameObject，但是我们也可以直接通过每实例数据去绘制GPU Instancing的物体
+    //创建每实例数据
+    private Matrix4x4[] matrices = new Matrix4x4[1023];
+    private Vector4[] baseColors = new Vector4[1023];
+
+    private MaterialPropertyBlock block;
+
+    private void Awake()
+    {
+        
+        for (int i = 0; i < matrices.Length; i++)
+        {
+            //在半径10米的球空间内随机实例小球的位置
+            matrices[i] = Matrix4x4.TRS(Random.insideUnitSphere * 10f, Quaternion.identity, Vector3.one);
+            baseColors[i] = new Vector4(Random.value, Random.value, Random.value, 1f);
+        }
+    }
+
+    private void Update()
+    {
+        //由于没有创建GameObject，需要每帧绘制
+        if (block == null)
+        {
+            block = new MaterialPropertyBlock();
+            //设置向量属性数组
+            block.SetVectorArray(baseColorId, baseColors);
+        }
+
+        //一帧绘制多个网格，并且没有创建不必要的游戏对象的开销（一次最多只能绘制1023个实例），材质必须支持GPU Instancing
+        Graphics.DrawMeshInstanced(mesh, 0, material, matrices, 1023, block);
+    }
+}
+```
+
+在这里值得注意的有几点。
+
+第一，我们对于MaterialPropertyBlock使用了SetVectorArray的方法来**设置向量属性数组**，参考[官方文档对该函数的描述](https://docs.unity3d.com/cn/2021.3/ScriptReference/MaterialPropertyBlock.SetVectorArray.html)，其向代码块添加向量数组属性，如果具有给定名称的向量数组属性已存在，则替换旧值。另外，**数组添加到代码块之后，其长度不可更改**。
+
+第二，我们使用**Graphics.DrawMeshInstanced**来**每帧**绘制所有小球实例。参考[官方文档对该函数的描述](https://docs.unity3d.com/cn/2021.3/ScriptReference/Graphics.DrawMeshInstanced.html)，该函数用于**一帧绘制多个网格，并且没有创建不必要的游戏对象的开销**。值得注意的是，一次绘制最多只能绘制1023个实例，并且使用的材质必须支持GPU Instancing。这种无GameObject化的绘制方式在很多商业项目中也会被大量使用用于提升性能。
+
+此时，我们运行游戏，我们可以在游戏中看到比较漂亮的景色了。
+
+<div align=center>
+
+![20221226191225](https://raw.githubusercontent.com/recaeee/PicGo/main/20221226191225.png)
+
+</div>
+
+同时，我们可以看到Hierarchy视图中不存在这些小球的GameObject，我们在Scene场景中也无法选中这些小球。此时我抓帧看了下绘制情况，发现其实并没有只执行一次Draw Call，而是执行了3次，第一次绘制了511个，第二次绘制了511个，第三次绘制了1个。或许我的GPU的常量缓冲区不够大到支持一次绘制1024个小球？我算了一下，一个小球的每实例数据大小为80B，那511个小球需要的数据大小约为40KB，所以我的GPU的常量缓冲区大小大约就是40KB+Mesh数据+材质部分数据，估计总的大小也就是64KB吧。
+
+<div align=center>
+
+![20221226191601](https://raw.githubusercontent.com/recaeee/PicGo/main/20221226191601.png)
+
+</div>
+
+此外，每个网格的绘制顺序与我们提供数据的顺序相同，另外在这次绘制中不存在排序（基于Camera那种）或视锥体剔除，也就是说即使我们视野中没有小球，这1023个小球依然会被绘制。
+
+#### 2.5 动态批处理 Dynamic Batching
+
+接下来，到了第三个优化Draw Call的方法——动态批处理Dynamic Batching。这是一个比较古老的技术，**它把多个共享相同材质的小Mesh合并成一个大的Mesh进行绘制**。另外，它不支持每Ojbect的材质属性(MaterialPropertyBlock)。
+
+启用动态批处理是这三种方法里最简单的，在CameraRenderer.DrawVisibleGeometry的DrawSettings初始化时，将其成员enableDynamicBatching设置为true，将其成员enableInstancing设置为false，同样关闭SRP Batcher（SRP Batcher具有较高的优先级）。
+
+这部分代码就不展示了。
+
+因为动态批处理更适合小型的Mesh（顶点数比较少），我在场景中摆放了几个Cube，总共使用两种材质（动态批处理仅支持同一材质，我这里用作实验）。
+
+<div align=center>
+
+![20221226193840](https://raw.githubusercontent.com/recaeee/PicGo/main/20221226193840.png)
+
+</div>
+
+这时候，我打开Frame Debugger一看，还是比较有意思的。
+
+<div align=center>
+
+![20221226193956](https://raw.githubusercontent.com/recaeee/PicGo/main/20221226193956.png)
+
+</div>
+
+我使用了2种材质，理论上应该只存在2次Draw Call，但实际进行了4次Draw Call，观察每一次的绘制结果可以知道，DrawRenderers中的绘制顺序会打断动态批处理，但是它也不会完全按照DrawRenderers的绘制顺序来绘制（进行了网格合并），总的来说绘制顺序没看出很大规律，不过大致是从前往后的。
+
+通常来说，GPU Instancing比Dynamic Batching效率更高。同时，Dynamic Batching有一些注意事项，比如**涉及不同Scale的网格合并时，不能保证较大网格的法向量是单位长度的**（原因未知），同时，**绘制顺序会发生变化**（上段提到）。
+
+除了这三种方法，还有一个**静态批处理**技术，其工作方法类似，它会在游戏运行前就对标记为静态批处理的GameObjects合并网格。
+
+更多批处理相关的原理，网上的文章也很多，大家有兴趣可以去看看，也可以去看看GPU硬件层面的知识（写这篇文章时，才发现我的硬件知识太弱了，很多地方都感觉写的没把握）。
+
+批处理推荐文章：[SamUncle——《关于静态批处理/动态批处理/GPU Instancing /SRP Batcher的详细剖析》](https://zhuanlan.zhihu.com/p/98642798)
+
+GPU硬件推荐文章：[向往——《深入GPU硬件架构及运行机制》](https://zhuanlan.zhihu.com/p/545056819)
+
+另外，有篇讲SRP原理底层的好文章：[王江荣——《【Unity】SRP底层渲染流程及原理》](https://zhuanlan.zhihu.com/p/378781638)
+
+#### 2.6 配置批处理 Configuring Batching
+
+不同批处理方法在不同的情境下使用，效率都会不一样，我们希望我们的批处理技术是可变化、可配置的。
+
+代码其实特别简单，添加几个配置的变量，然后设置一下就行了，只展示部分代码。
+
+CameraRenderer.cs的Render函数代码如下，添加两个参数。
+
+```c#
+    public void Render(ScriptableRenderContext context, Camera camera, bool useDynamicBatching, bool useGPUInstancing)
+    {
+        //设定当前上下文和摄像机
+        this.context = context;
+        this.camera = camera;
+        
+        PrepareBuffer();
+        PrepareForSceneWindow();
+        
+        if (!Cull())
+        {
+            return;
+        }
+        
+        Setup();
+        DrawVisibleGeometry(useDynamicBatching, useGPUInstancing);
+        DrawUnsupportedShaders();
+        DrawGizmos();
+        Submit();
+    }
+```
+
+CustomRenderPipeline.cs代码如下。
+
+```c#
+using UnityEngine;
+using UnityEngine.Rendering;
+
+public class CustomRenderPipeline : RenderPipeline
+{
+    //摄像机渲染器实例，用于管理所有摄像机的渲染
+    private CameraRenderer renderer = new CameraRenderer();
+    
+    //批处理配置
+    private bool useDynamicBatching, useGPUInstancing;
+
+    //构造函数，初始化管线的一些属性
+    public CustomRenderPipeline(bool useDynamicBatching, bool useGPUInstancing, bool useSRPBatcher)
+    {
+        this.useDynamicBatching = useDynamicBatching;
+        this.useGPUInstancing = useGPUInstancing;
+        //配置SRP Batch
+        GraphicsSettings.useScriptableRenderPipelineBatching = useSRPBatcher;
+    }
+    
+    //必须重写Render函数，渲染管线实例每帧执行Render函数
+    protected override void Render(ScriptableRenderContext context, Camera[] cameras)
+    {
+        //按顺序渲染每个摄像机
+        foreach (var camera in cameras)
+        {
+            renderer.Render(context, camera, useDynamicBatching, useGPUInstancing);
+        }
+    }
+}
+```
+
+CustomRenderPipelineAsset.cs代码如下。
+
+```c#
+using UnityEngine;
+using UnityEngine.Rendering;
+
+[CreateAssetMenu(menuName = "Rendering/Custom Render Pipeline")]
+public class CustomRenderPipelineAsset : RenderPipelineAsset
+{
+    [SerializeField] private bool useDynamicBatching = true, useGPUInstancing = true, useSRPBatcher = true;
+    protected override RenderPipeline CreatePipeline()
+    {
+        return new CustomRenderPipeline(useDynamicBatching, useGPUInstancing, useSRPBatcher);
+    }
+}
+```
+
+PS：我记得我第一次跟着教程做到这的时候，已经分不清这三个脚本的区别了，当时也不太清楚RenderPipeline和RenderPipelineAsset的区别，现在终于比较清晰了。
+
+最终效果如下所示。
+
+<div align=center>
+
+![20221226200429](https://raw.githubusercontent.com/recaeee/PicGo/main/20221226200429.png)
+
+</div>
+
+好了，批处理这一坐山终于算爬过去了（其实还有好多没懂的）。
+
+#### 3 透明 Transparency
+
+<div align=center>
+
+![20221226204820](https://raw.githubusercontent.com/recaeee/PicGo/main/20221226204820.png)
+
+</div>
+
+目前我们的Unlit.shader只支持不透明物体的绘制，我们可以在其上做一些改造，使其同时支持不透明物体和透明物体的绘制。
+
+#### 3.1 混合模式 Blend Modes
+
+不透明物体和透明物体的渲染的主要区别在于是否完全覆盖原像素的颜色。我们可以使用source和destination的混合模式，source指将要被绘制的颜色，destination指当前像素的颜色。
+
+我们首先在Properties中定义_SrcBlend和_DstBlend。这两个值本应该是枚举值，但我们使用Float来定义它们，同时增加特性，在Editor下更方便地设置它们。最后在Pass中设置混合模式，使用方括号包裹_SrcBlend和_DstBlend，这是种古老的语法。
+
+Opaque物体的混合模式为Src=One、Dst=Zero，即新颜色会完全覆盖旧颜色，而Transparent物体的混合模式为Src=SrcAlhpa、Dst=OneMinusSrcAlpha，使用新片元的透明度为权值混合两者。这个比较简单，《Shader入门精要》中也对混合模式有较为详细的介绍。
+
+#### 3.2 不写入深度 Not Writing Depth
+
+透明物体的渲染通常不会写入深度缓冲，我们通过在Pass中设置ZWrite开启或关闭，来控制深度写入模式，同样需要在Properties中加入配置变量。写法类似3.2节。
+
+Unlit.Shader代码如下。
+
+```c#
+Shader "Custom RP/Unlit"
+{
+    Properties
+    {
+        //[可选：特性]变量名(Inspector上的文本,类型名) = 默认值
+        //[optional: attribute] name("display text in Inspector", type name) = default value
+        _BaseColor("Color",Color) = (1.0,1.0,1.0,1.0)
+        //混合模式使用的值，其值应该是枚举值，但是这里使用float
+        //特性用于在Editor下更方便编辑
+        [Enum(UnityEngine.Rendering.BlendMode)]_SrcBlend("Src Blend",Float) = 1
+        [Enum(UnityEngine.Rendering.BlendMode)]_DstBlend("Dst Blend",Float) = 0
+        //深度写入模式
+        [Enum(Off,0,On,1)] _ZWrite("Z Write",Float) = 1
+    }
+
+    SubShader
+    {
+        Pass
+        {
+            //设置混合模式
+            Blend [_SrcBlend] [_DstBlend]
+            
+            HLSLPROGRAM
+            //这一指令会让Unity生成两个该Shader的变体，一个支持GPU Instancing，另一个不支持。
+            #pragma multi_compile_instancing
+            #pragma vertex UnlitPassVertex
+            #pragma fragment UnlitPassFragment
+            #include "UnlitPass.hlsl"
+            ENDHLSL
+        }
+    }
+}
+```
+
+#### 3.3 纹理采样 Texturing
+
+我们还需要实现带alpha通道贴图的纹理采样。主要工作就是Properties中定义纹理，在Shader全局变量区中定义纹理的句柄和纹理采样器，在每实例数据中增加纹理坐标的ST变换，然后在着色器输入输出中添加对应变量，在顶点着色器中应用纹理坐标ST变换，在片元着色器中采样，并且使采样颜色结果和baseColor相乘。注意，还需要把透明材质的RenderQueue改为Transparency(3000)。
+
+这里其实没什么值得讲的重点，主要就是注意HLSL的语法，多熟悉一下。
+
+Unlit.shader代码如下。
+
+```c#
+Shader "Custom RP/Unlit"
+{
+    Properties
+    {
+        //[可选：特性]变量名(Inspector上的文本,类型名) = 默认值
+        //[optional: attribute] name("display text in Inspector", type name) = default value
+        
+        //"white"为默认纯白贴图，{}在很久之前用于纹理的设置
+        _BaseMap("Texture", 2D) = "white"{}
+        _BaseColor("Color",Color) = (1.0,1.0,1.0,1.0)
+        //混合模式使用的值，其值应该是枚举值，但是这里使用float
+        //特性用于在Editor下更方便编辑
+        [Enum(UnityEngine.Rendering.BlendMode)]_SrcBlend("Src Blend",Float) = 1
+        [Enum(UnityEngine.Rendering.BlendMode)]_DstBlend("Dst Blend",Float) = 0
+        //深度写入模式
+        [Enum(Off,0,On,1)] _ZWrite("Z Write",Float) = 1
+    }
+
+    SubShader
+    {
+        Pass
+        {
+            //设置混合模式
+            Blend [_SrcBlend] [_DstBlend]
+            ZWrite [_ZWrite]
+            
+            HLSLPROGRAM
+            //这一指令会让Unity生成两个该Shader的变体，一个支持GPU Instancing，另一个不支持。
+            #pragma multi_compile_instancing
+            #pragma vertex UnlitPassVertex
+            #pragma fragment UnlitPassFragment
+            #include "UnlitPass.hlsl"
+            ENDHLSL
+        }
+    }
+}
+```
+
+UnlitPass.hlsl代码如下。
+
+```c#
+#ifndef CUSTOM_UNLIT_PASS_INCLUDED
+#define CUSTOM_UNLIT_PASS_INCLUDED
+
+#include "../ShaderLibrary/Common.hlsl"
+
+//使用Core RP Library的CBUFFER宏指令包裹材质属性，让Shader支持SRP Batcher，同时在不支持SRP Batcher的平台自动关闭它。
+//CBUFFER_START后要加一个参数，参数表示该C buffer的名字(Unity内置了一些名字，如UnityPerMaterial，UnityPerDraw。
+// CBUFFER_START(UnityPerMaterial)
+// float4 _BaseColor;
+// CBUFFER_END
+
+//在Shader的全局变量区定义纹理的句柄和其采样器，通过名字来匹配
+TEXTURE2D(_BaseMap);
+SAMPLER(sampler_BaseMap);
+
+//为了使用GPU Instancing，每实例数据要构建成数组,使用UNITY_INSTANCING_BUFFER_START(END)来包裹每实例数据
+UNITY_INSTANCING_BUFFER_START(UnityPerMaterial)
+    //纹理坐标的偏移和缩放可以是每实例数据
+    UNITY_DEFINE_INSTANCED_PROP(float4,_BaseMap_ST)
+    //_BaseColor在数组中的定义格式
+    UNITY_DEFINE_INSTANCED_PROP(float4,_BaseColor)
+UNITY_INSTANCING_BUFFER_END(UnityPerMaterial)
+
+//使用结构体定义顶点着色器的输入，一个是为了代码更整洁，一个是为了支持GPU Instancing（获取object的index）
+struct Attributes
+{
+    float3 positionOS:POSITION;
+    float2 baseUV:TEXCOORD0;
+    //定义GPU Instancing使用的每个实例的ID，告诉GPU当前绘制的是哪个Object
+    UNITY_VERTEX_INPUT_INSTANCE_ID
+};
+
+//为了在片元着色器中获取实例ID，给顶点着色器的输出（即片元着色器的输入）也定义一个结构体
+//命名为Varings是因为它包含的数据可以在同一三角形的片段之间变化
+struct Varyings
+{
+    float4 positionCS:SV_POSITION;
+    float2 baseUV:VAR_BASE_UV;
+    //定义每一个片元对应的object的唯一ID
+    UNITY_VERTEX_INPUT_INSTANCE_ID
+};
+
+Varyings UnlitPassVertex(Attributes input)
+{
+    Varyings output;
+    //从input中提取实例的ID并将其存储在其他实例化宏所依赖的全局静态变量中
+    UNITY_SETUP_INSTANCE_ID(input);
+    //将实例ID传递给output
+    UNITY_TRANSFER_INSTANCE_ID(input,output);
+    float3 positionWS = TransformObjectToWorld(input.positionOS);
+    output.positionCS = TransformWorldToHClip(positionWS);
+    //应用纹理ST变换
+    float4 baseST = UNITY_ACCESS_INSTANCED_PROP(UnityPerMaterial,_BaseMap_ST);
+    output.baseUV = input.baseUV * baseST.xy + baseST.zw;
+    return output;
+}
+
+float4 UnlitPassFragment(Varyings input) : SV_TARGET
+{
+    //从input中提取实例的ID并将其存储在其他实例化宏所依赖的全局静态变量中
+    UNITY_SETUP_INSTANCE_ID(input);
+    //获取采样纹理颜色
+    float4 baseMap = SAMPLE_TEXTURE2D(_BaseMap,sampler_BaseMap,input.baseUV);
+    //通过UNITY_ACCESS_INSTANCED_PROP获取每实例数据
+    float4 baseColor =  UNITY_ACCESS_INSTANCED_PROP(UnityPerMaterial, _BaseColor);
+    return baseMap * baseColor;
+}
+
+#endif
+```
+
+#### 3.4 透明度裁剪 Alpha Clipping
+
+另一类透明物体应用了透明度裁剪，我们也叫Alpha Test，即透明度测试。其原理就是把不透明度低于一定阈值的片元直接舍弃（**透明度测试绘制的物体其实更偏向不透明物体**）。
+
+对于使用透明度测试的物体，我们将起RenderQueue设置为AlphaTest(2450)，SrcBlend=One、DstBlend=Zero，ZWrite=On，很类似于Opaque。AlhpaTest的物体会在所有Opaque物体之后渲染。
+
+透明度裁剪的代码也非常简单，其中Cutoff也是每实例数据。
+
+AlphaTest和Transparent物体绘制效果如下。
+
+<div align=center>
+
+![20221226223128](https://raw.githubusercontent.com/recaeee/PicGo/main/20221226223128.png)
+
+</div>
+
+#### 3.5 Shader Features
+
+Clip函数会使一些GPU优化失效，我们不希望所有使用Unlit.shader的着色器都包含Clip函数，因为很多材质用不到AlphaTest，因此，我们选择使用**Shader关键字**来控制Shader变体的编译。
+
+我们在Properties中增加一个Shader关键字的Toggle，关键字名为_CLIPPING。
+
+```c#
+//Clip的Shader关键字，启用该Toggle会将_Clipping关键字添加到该材质活动关键字列表中，而禁用该Toggle会将其删除
+[Toggle(_CLIPPING)] _Clipping("Alpha Clipping",Float) = 0
+```
+
+同时在Pass中加入#pragma shader_feature _CLIPPING，这条指令告诉Unity，我们要通过_CLIPPING这个关键字来进行不同着色器变体的编译。
+
+```c#
+//告诉Unity启用_CLIPPING关键字时编译不同版本的Shader
+#pragma shader_feature _CLIPPING
+```
+
+最后，用#if defined条件编译包裹片元着色器中的Clip函数，大功告成。
+
+```c#
+float4 UnlitPassFragment(Varyings input) : SV_TARGET
+{
+    //从input中提取实例的ID并将其存储在其他实例化宏所依赖的全局静态变量中
+    UNITY_SETUP_INSTANCE_ID(input);
+    //获取采样纹理颜色
+    float4 baseMap = SAMPLE_TEXTURE2D(_BaseMap,sampler_BaseMap,input.baseUV);
+    //通过UNITY_ACCESS_INSTANCED_PROP获取每实例数据
+    float4 baseColor =  UNITY_ACCESS_INSTANCED_PROP(UnityPerMaterial, _BaseColor);
+    float4 base = baseMap * baseColor;
+
+    //只有在_CLIPPING关键字启用时编译该段代码
+    #if defined(_CLIPPING)
+    //clip函数的传入参数如果<=0则会丢弃该片元
+    clip(base.a - UNITY_ACCESS_INSTANCED_PROP(UnityPerMaterial, _Cutoff));
+    #endif
+    
+    return base;
+}
+```
+
+官方文档对[着色器变体和关键字](https://docs.unity3d.com/cn/2019.4/Manual/SL-MultipleProgramVariants.html)做了详细的描述。
+
+**Unity 编译着色器代码片段时，它将为已启用和已禁用关键字的不同组合创建单独的着色器程序。这些各个着色器程序被称为着色器变体**。（但关键字过多，往往会导致着色器变体占用的内存过大，增长为指数级别）
+
+shader_feature指令会生成两个着色器变体，但Unity不会将shader_feature着色器的未用变体包括在最终构建中，会一定程度减少Shader内存。
+
+与之相对的还有multi_compile指令，该指令与shader_feature类似，但最终构建时会将所有变体包括。
+
+根据两者特性，**shader_feature用于材质中设置的关键字，而multi_compile更适合通过代码来全局设置的关键字**（毕竟Unity打包的时候不知道代码是否会启用这些关键字）。
+
+#### 3.6 每实例Cutoff Cutoff Per Object
+
+因为Cutoff时每实例数据，我们需要在PerObjectMaterialProperties脚本中增加该值，实现让每个物体有自己的cutoff值。
+
+这里代码很简单，类似_BaseColor的设置，代码就不贴啦。
+
+#### 3.7 透明度测试实例化 Ball of Alpha-Clipped Spheres
+
+在MeshBall脚本（使用GPU Instancing程序化生成）中，我们同样可以使用透明度测试的材质。
+
+在MeshBall的Awake函数中，我们随机化实例小球的旋转和尺寸，然后对其BaseColor的透明度也随机化。
+
+Meshball.cs中Awake部分代码如下。
+
+```c#
+    private void Awake()
+    {
+        
+        for (int i = 0; i < matrices.Length; i++)
+        {
+            //在半径10米的球空间内随机实例小球的位置
+            matrices[i] = Matrix4x4.TRS(Random.insideUnitSphere * 10f,
+                Quaternion.Euler(Random.value * 360f, Random.value * 360f, Random.value * 360f),
+                Vector3.one * Random.Range(0.5f, 1.5f));
+            baseColors[i] = new Vector4(Random.value, Random.value, Random.value, Random.Range(0.5f,1f));
+        }
+    }
+```
+
+最后效果如下，还是挺好看的。
+
+<div align=center>
+
+![20221226223921](https://raw.githubusercontent.com/recaeee/PicGo/main/20221226223921.png)
+
+</div>
+
+最后需要注意的是，因为Cutoff也是每实例数据，虽然我们没在block中设置每个实例的Cutoff值，Unity也会使用材质的默认值构建成一个1023大小的float数组，其中每个值都是默认值，传递给GPU。
+
+这一章写完~
+
+#### 结束语
+
+这一篇花了很久的时间，其中包括实习工作繁忙和阳了的原因，但更大的原因在于，我对批处理的底层理解的还是太浅，对于Shader在GPU层面的运作机制还不是很了解，接下来我也会多看一些硬件相关的文章，我相信在理解硬件之后，会对Shader理解更清晰一些。好啦，最后提醒自己千万不能怠惰。不知道这篇较长的文章有多少人看完呢，我相信肯定有很多讲的不对的地方，欢迎大家交流意见，或者进行批评指正！
+
 #### 参考
 
 1. 《Shader入门精要》——冯乐乐
 2. https://qxsoftware.github.io/Unity-Rendering-Order.html
 3. 涩图来自wlop大大 https://space.bilibili.com/26633150
+4. 文中引用的知乎文章均已超链，在这里不再列举，感谢各位大佬。

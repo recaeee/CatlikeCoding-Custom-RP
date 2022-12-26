@@ -43,9 +43,10 @@
   <ItemGroup>
      <Compile Include="Assets\Custom RP\Runtime\CustomRenderPipeline.cs" />
      <Compile Include="Assets\Custom RP\Runtime\CameraRenderer.cs" />
+     <Compile Include="Assets\Custom RP\Examples\PerObjectMaterialProperties.cs" />
      <Compile Include="Assets\Custom RP\Runtime\CameraRenderer.Editor.cs" />
      <Compile Include="Assets\Custom RP\Runtime\CustomRenderPipelineAsset.cs" />
-     <Compile Include="Assets\Custom RP\Examples\PerObjectMaterialProperties.cs" />
+     <Compile Include="Assets\Custom RP\Examples\MeshBall.cs" />
      <None Include="Assets\Custom RP\ShaderLibrary\Common.hlsl" />
      <None Include="Assets\Custom RP\ShaderLibrary\UnityInput.hlsl" />
      <None Include="Assets\Custom RP\Shaders\Unlit.shader" />
