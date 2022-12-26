@@ -12,6 +12,8 @@ Shader "Custom RP/Unlit"
         Pass
         {
             HLSLPROGRAM
+            //这一指令会让Unity生成两个该Shader的变体，一个支持GPU Instancing，另一个不支持。
+            #pragma multi_compile_instancing
             #pragma vertex UnlitPassVertex
             #pragma fragment UnlitPassFragment
             #include "UnlitPass.hlsl"

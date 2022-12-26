@@ -5,15 +5,6 @@
 #include "Packages/com.unity.render-pipelines.core/ShaderLibrary/Common.hlsl"
 #include "UnityInput.hlsl"
 
-// float3 TransformObjectToWorld(float3 positionOS)
-// {
-//     return mul(unity_ObjectToWorld,float4(positionOS,1.0)).xyz;
-// }
-//
-// float4 TransformWorldToHClip(float3 positionWS)
-// {
-//     return mul(unity_MatrixVP,float4(positionWS,1.0));
-// }
 //将Unity内置着色器变量转换为SRP库需要的变量
 #define UNITY_MATRIX_M unity_ObjectToWorld
 #define UNITY_MATRIX_I_M unity_WorldToObject
@@ -24,6 +15,9 @@
 #define UNITY_PREV_MATRIX_M unity_ObjectToWorld
 #define UNITY_PREV_MATRIX_I_M unity_WorldToObject
 //我们直接使用SRP库中已经帮我们写好的函数
+//在include UnityInstancing.hlsl之前需要定义Unity_Matrix_M和其他宏，以及SpaceTransform.hlsl
+//UnityInstancing.hlsl重新定义了一些宏用于访问实例化数据数组
+#include "Packages/com.unity.render-pipelines.core/ShaderLibrary/UnityInstancing.hlsl"
 #include "Packages/com.unity.render-pipelines.core/ShaderLibrary/SpaceTransforms.hlsl"
 
 #endif

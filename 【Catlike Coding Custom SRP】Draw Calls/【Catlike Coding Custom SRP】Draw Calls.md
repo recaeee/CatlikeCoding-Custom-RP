@@ -532,7 +532,195 @@ float4x4 glstate_matrix_projection;
 
 在2.1啰嗦了这么多，再简单概括下SRP Batcher的工作流程，即将一些数据（材质、每个物体的变换矩阵等）缓存在GPU显存（常量缓冲区）中，在每次Draw Call时使用一个偏移找到正确的内存地址，得到这些数据用于绘制。（其背后原理并不简单啊，好难~）
 
-接下来，来看一种情况，如果我们需要很多不同颜色的小球，那我们就必须得为每一个颜色都单独创建一个材质，这显然并不方便。
+接下来，来看一种情况，如果我们需要很多不同颜色的小球，那我们就必须得为每一个颜色都单独创建一个材质，这显然并不方便。Unity提供了一个类型可以用来设置**相同材质下每实例数据**，叫做**MaterialPropertyBlock**。
+
+我们创建一个组件脚本（继承自MonoBehaviour），在其中创建一个静态的MaterialPropertyBlock对象（重复利用），以及Color对象（每个小球的颜色），给每个小球挂载该组件，代码如下。
+
+```c#
+using UnityEngine;
+
+//特性：不允许同一物体挂多个该组件
+[DisallowMultipleComponent]
+public class PerObjectMaterialProperties : MonoBehaviour
+{
+    //获取名为"_BaseColor"的Shader属性（全局）
+    private static int baseColorId = Shader.PropertyToID("_BaseColor");
+    
+    //每个物体自己的颜色
+    [SerializeField] Color baseColor = Color.white;
+
+    //MaterialPropertyBlock用于给每个物体设置材质属性，将其设置为静态，所有物体使用同一个block
+    private static MaterialPropertyBlock block;
+
+    //每当设置脚本的属性时都会调用 OnValidate（Editor下）
+    private void OnValidate()
+    {
+        if (block == null)
+        {
+            block = new MaterialPropertyBlock();
+        }
+
+        //设置block中的baseColor属性(通过baseCalorId索引)为baseColor
+        block.SetColor(baseColorId, baseColor);
+        //将物体的Renderer中的颜色设置为block中的颜色
+        GetComponent<Renderer>().SetPropertyBlock(block);
+    }
+
+    //Runtime时也执行
+    private void Awake()
+    {
+        OnValidate();
+    }
+}
+```
+
+这里代码同样很简单，但是我们需要注意几个点。
+
+首先，我们通过int类型的baseColorId去找到**名称叫做_BaseColor的着色器属性的唯一标识符**，我们需要牢记的是，**这个int只代表了属性名称，不代表属性本身**，在block.SetColor()方法中通过该int类型的标识符来设置属性比通过string类型的“_BaseColor”来设置属性更高效。Shader.PropertyToID方法具体描述见[官方文档](https://docs.unity3d.com/cn/2021.3/ScriptReference/Shader.PropertyToID.html)。值得一提的是，在一次运行游戏中，一个属性名称的Id是相同的，但是在不同次运行或不同机器上这些数字不同，所以**不要存储或通过网络发送这些数字**。
+
+其次，我们需要知道对于一个带Renderer的Ojbect而言，它使用的着色器属性的优先顺序如下：每实例数据覆盖所有内容；然后使用材质数据；最后，如果这两个地方不存在着色器属性，则使用全局属性值。最终，如果在任何地方都没有定义着色器属性值，则将提供“默认值”（浮点数的默认值为零，颜色的默认值为黑色，纹理的默认值为空的白色纹理）。（该段参考[Unity文档《使用 Cg/HLSL 访问着色器属性》](https://docs.unity3d.com/cn/2021.3/Manual/SL-PropertiesInPrograms.html)）
+
+这一节完毕，我们可以很方便使用同一个材质得到不同颜色小球，效果如下图所示。
+
+<div align=center>
+
+![20221226094904](https://raw.githubusercontent.com/recaeee/PicGo/main/20221226094904.png)
+
+</div>
+
+但此时如果我们打开Frame Debugger截取一帧看，我们会失望地发现SRP Batcher失效了。
+
+<div align=center>
+
+![20221226100641](https://raw.githubusercontent.com/recaeee/PicGo/main/20221226100641.png)
+
+</div>
+
+从Frame Debugger中的提示信息我们可以看到，SRP Batch失败的原因是Objects使用了不同的MaterialPropertyBlock的设置。这里我去网上也查了一下，MaterialPropertyBlock并不会产生新的材质实例（Material.SetColor之类的会产生，导致材质占用内存变大），MaterialPropertyBlock本身不支持SRP Batch。
+
+#### 2.3 GPU实例化 GPU Instancing
+
+针对于每个物体自身不同的材质属性，优化Draw Call性能的另一个方法是GPU Instancing，它的作用是**将多个使用相同Mesh相同Material的Objects放在一次Draw Call中绘制**。其中，**不同Object的材质属性可以不同**。CPU会收集每个物体的Transform信息和Material Properties然后构建成一个数组发送给GPU。GPU根据数组迭代绘制每个实体。
+
+因为GPU实例化需要通过数组承载数据，所以我们首先需要在Vertex Shader和Fragment Shader之前添加#pragma multi_compile_instancing，这一指令会让Unity生成两个该Shader的变体，一个支持GPU Instancing，另一个不支持。在材质的Inspector视图下会多一个toggle提供选择使用哪个变体(是否启用GPU Instancing)。
+
+<div align=center>
+
+![20221226103414](https://raw.githubusercontent.com/recaeee/PicGo/main/20221226103414.png)
+
+</div>
+
+为了使用GPU Instancing，我们会首先include UnityInstancing.hlsl，该hlsl文件为我们做了一些GPU Instancing的准备工作，它重新定义了一些宏用于访问实例化数据数组。
+
+此外，我们使用struct去定义顶点着色器输入和片元着色器输入，一方面代码更整洁，一方面是为了支持GPU Instancing，在结构体中，我们会使用宏（来自UnityInstancing.hlsl）来定义每实例的唯一ID，当然也包括原本的输入数据。对于每实例的材质数据，我们使用**UNITY_INSTANCING_BUFFER**来包裹，类似于CBUFFER的写法，在着色器方法中，使用**UNITY_ACCESS_INSTANCED_PROP**来获取对应名称Buffer段下的属性。
+
+Common.hlsl代码如下。
+
+```c#
+//存储一些常用的函数，如空间变换
+#ifndef CUSTOM_COMMON_INCLUDED
+#define CUSTOM_COMMON_INCLUDED
+
+#include "Packages/com.unity.render-pipelines.core/ShaderLibrary/Common.hlsl"
+#include "UnityInput.hlsl"
+
+//将Unity内置着色器变量转换为SRP库需要的变量
+#define UNITY_MATRIX_M unity_ObjectToWorld
+#define UNITY_MATRIX_I_M unity_WorldToObject
+#define UNITY_MATRIX_V unity_MatrixV
+#define UNITY_MATRIX_VP unity_MatrixVP
+#define UNITY_MATRIX_P glstate_matrix_projection
+//使用2021版本的坑，我们还需要定义两个PREV标识符，才不会报错，但这两个变量具体代表什么未知
+#define UNITY_PREV_MATRIX_M unity_ObjectToWorld
+#define UNITY_PREV_MATRIX_I_M unity_WorldToObject
+//我们直接使用SRP库中已经帮我们写好的函数
+//在include UnityInstancing.hlsl之前需要定义Unity_Matrix_M和其他宏，以及SpaceTransform.hlsl
+//UnityInstancing.hlsl重新定义了一些宏用于访问实例化数据数组
+#include "Packages/com.unity.render-pipelines.core/ShaderLibrary/UnityInstancing.hlsl"
+#include "Packages/com.unity.render-pipelines.core/ShaderLibrary/SpaceTransforms.hlsl"
+
+#endif
+```
+
+UnlitPass.hlsl代码如下。
+
+```c#
+#ifndef CUSTOM_UNLIT_PASS_INCLUDED
+#define CUSTOM_UNLIT_PASS_INCLUDED
+
+#include "../ShaderLibrary/Common.hlsl"
+
+//使用Core RP Library的CBUFFER宏指令包裹材质属性，让Shader支持SRP Batcher，同时在不支持SRP Batcher的平台自动关闭它。
+//CBUFFER_START后要加一个参数，参数表示该C buffer的名字(Unity内置了一些名字，如UnityPerMaterial，UnityPerDraw。
+// CBUFFER_START(UnityPerMaterial)
+// float4 _BaseColor;
+// CBUFFER_END
+
+//为了使用GPU Instancing，每实例数据要构建成数组,使用UNITY_INSTANCING_BUFFER_START(END)来包裹每实例数据
+UNITY_INSTANCING_BUFFER_START(UnityPerMaterial)
+    //_BaseColor在数组中的定义格式
+    UNITY_DEFINE_INSTANCED_PROP(float4,_BaseColor)
+UNITY_INSTANCING_BUFFER_END(UnityPerMaterial)
+
+//使用结构体定义顶点着色器的输入，一个是为了代码更整洁，一个是为了支持GPU Instancing（获取object的index）
+struct Attributes
+{
+    float3 positionOS:POSITION;
+    //定义GPU Instancing使用的每个实例的ID，告诉GPU当前绘制的是哪个Object
+    UNITY_VERTEX_INPUT_INSTANCE_ID
+};
+
+//为了在片元着色器中获取实例ID，给顶点着色器的输出（即片元着色器的输入）也定义一个结构体
+//命名为Varings是因为它包含的数据可以在同一三角形的片段之间变化
+struct Varyings
+{
+    float4 positionCS:SV_POSITION;
+    //定义每一个片元对应的object的唯一ID
+    UNITY_VERTEX_INPUT_INSTANCE_ID
+};
+
+Varyings UnlitPassVertex(Attributes input)
+{
+    Varyings output;
+    //从input中提取实例的ID并将其存储在其他实例化宏所依赖的全局静态变量中
+    UNITY_SETUP_INSTANCE_ID(input);
+    //将实例ID传递给output
+    UNITY_TRANSFER_INSTANCE_ID(input,output);
+    float3 positionWS = TransformObjectToWorld(input.positionOS);
+    output.positionCS = TransformWorldToHClip(positionWS);
+    return output;
+}
+
+float4 UnlitPassFragment(Varyings input) : SV_TARGET
+{
+    //从input中提取实例的ID并将其存储在其他实例化宏所依赖的全局静态变量中
+    UNITY_SETUP_INSTANCE_ID(input);
+    //通过UNITY_ACCESS_INSTANCED_PROP获取每实例数据
+    return UNITY_ACCESS_INSTANCED_PROP(UnityPerMaterial, _BaseColor);
+}
+
+#endif
+```
+
+从代码中可见，对于GPU Instancing的实现，我们几乎都是通过UnityInstancing.hlsl定义好的宏指令来实现的，代码上看起来可能会比较让人心生畏惧（我害怕大量的宏指令）。其主要做的事就包括了**每实例数据的定义（数组形式）、每实例唯一ID的构建、每实例数据的获取**。
+
+现在，为我们的材质打开Enable GPU Instancing，然后使用Frame Debugger抓帧一看，GPU Instancing已经实现了。在RenderLoop.Draw中，只产生了一条**Draw Mesh(instanced)**，从详细信息中可以看到，其执行了1次Draw Call，共绘制了17个实例。
+
+<div align=center>
+
+![20221226112433](https://raw.githubusercontent.com/recaeee/PicGo/main/20221226112433.png)
+
+</div>
+
+参考文章[《关于静态批处理/动态批处理/GPU Instancing /SRP Batcher的详细剖析》](https://zhuanlan.zhihu.com/p/98642798)，GPU Instancing的底层原理也同样使用了GPU常量缓冲区（即Constant Buffer），Unity会将每个实例的位置、缩放、uv偏移等信息保存在显存中的常量缓冲区中，在绘制每个实例时抽取出其对应的信息使用。
+
+但我们知道，显存的常量缓冲区的大小是有限的（通常为64KB），因此**一次GPU Instancing的可合批实例数量取决于目标平台（常量缓冲区的大小）和每实例数据的大小**。
+
+最后再提一下GPU Instancing的使用条件：**使用相同Mesh、相同材质的物体，但各自的材质属性可以不同**。另外，绘制顺序也会打断批处理（例如中间出现其他材质的物体）。
+
+相比SRP Batch来说，我觉得GPU Instancing比较容易理解。
+
+#### 2.4 绘制更多实例网格 Drawing Many Instanced Meshes
 
 #### 参考
 
