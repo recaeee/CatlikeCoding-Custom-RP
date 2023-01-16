@@ -6,7 +6,7 @@ public partial class CameraRenderer
     //定义Command Buffer的名字，FrameDebugger会捕捉到它，由此可见FrameDebugger会以Command Buffer为单位去抓取一帧内的渲染过程
     private const string bufferName = "Render Camera";
     //获取ShaderId，用于告诉渲染器我们支持渲染哪些ShaderPasses
-    private static ShaderTagId unlitShaderTagId = new ShaderTagId("SRPDefaultUnlit");
+    private static ShaderTagId unlitShaderTagId = new ShaderTagId("SRPDefaultUnlit"), litShaderTagId = new ShaderTagId("CustomLit");
     
     
     
@@ -75,6 +75,8 @@ public partial class CameraRenderer
             enableDynamicBatching = useDynamicBatching,
             enableInstancing = useGPUInstancing
         };
+        //增加对Lit.shader的绘制支持,index代表本次DrawRenderer中该pass的绘制优先级（0最先绘制）
+        drawingSettings.SetShaderPassName(1, litShaderTagId);
         //决定过滤哪些Visible Objects的配置，包括支持的RenderQueue等
         var filteringSettings = new FilteringSettings(RenderQueueRange.opaque);
         //渲染CullingResults内不透明的VisibleObjects
@@ -90,7 +92,6 @@ public partial class CameraRenderer
         filteringSettings.renderQueueRange = RenderQueueRange.transparent;
         //绘制透明物体
         context.DrawRenderers(cullingResults, ref drawingSettings, ref filteringSettings);
-        
     }
 
     void Submit()
