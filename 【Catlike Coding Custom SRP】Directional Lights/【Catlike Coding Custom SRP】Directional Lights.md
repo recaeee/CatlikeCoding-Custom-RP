@@ -267,7 +267,7 @@ Varyings LitPassVertex(Attributes input)
 
 <div align=center>
 
-![20230117234421](https://raw.githubusercontent.com/recaeee/PicGo/main/20230117234421.png)
+![20230117235201](https://raw.githubusercontent.com/recaeee/PicGo/main/20230117235201.png)
 
 </div>
 
