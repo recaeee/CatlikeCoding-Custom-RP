@@ -24,29 +24,6 @@ Shader "Custom RP/Lit"
     {
         Pass
         {
-            //测试Pass，返回纯红色
-            Tags
-            {
-                "LightMode" = "CustomLit"
-            }
-            Blend [_SrcBlend] [_DstBlend]
-            ZWrite [_ZWrite]
-
-            HLSLPROGRAM
-            #pragma shader_feature _CLIPPING
-            #pragma multi_compile_instancing
-            #pragma vertex LitPassVertex
-            #pragma fragment test
-            #include "LitPass.hlsl"
-
-            float4 test(Varyings input) : SV_TARGET
-            {
-                return half4(1, 0, 0, 1);
-            }
-            ENDHLSL
-        }
-        Pass
-        {
             //设置Pass Tags，最关键的Tag为"LightMode"
             Tags
             {

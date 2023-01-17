@@ -180,3 +180,95 @@ Lit.shader关键代码如下。
 由此得出：**对于一个drawSettings中要绘制的"LightMode"，Unity会从SubShader中从上往下找到第一个"LightMode"为对应值的Pass，如果没有则走Fallback**。
 
 接下来做另一个实验来印证SetShaderPassName中的index的含义。
+
+我在Lit.shader将返回纯红色的测试Pass的"LightMode"改为了“TestTag"，这也就意味着目前Lit.shader种包括2个不同LightMode的Pass，一个"CustomLit"（显示灰色），一个"TestTag"（显示红色）。接下来，我在DrawRenderers之前将"TestTag"以索引号2设置为drawSettings的ShaderPass。由此，索引0对应"SRPDefaultUnlit"，索引1对应"CustomLit"，索引2对应"TestTag"。
+
+部分关键代码如下。
+
+```c#
+        //增加对Lit.shader的绘制支持,index代表本次DrawRenderer中该pass的绘制优先级（0最先绘制）
+        drawingSettings.SetShaderPassName(1, litShaderTagId);//"LightMode"="CustomLit"
+        drawingSettings.SetShaderPassName(2,new ShaderTagId("TestTag"));
+        //决定过滤哪些Visible Objects的配置，包括支持的RenderQueue等
+        var filteringSettings = new FilteringSettings(RenderQueueRange.opaque);
+        //渲染CullingResults内不透明的VisibleObjects
+        context.DrawRenderers(cullingResults, ref drawingSettings, ref filteringSettings);
+```
+
+最后结果Cube呈现红色，也就意味着"CustomLit"先被绘制，接着是"TestTag"绘制红色，然后覆盖掉了灰色。使用FrameDebugger查看绘制顺序，也印证了该猜想。
+
+<div align=center>
+
+![20230117225833](https://raw.githubusercontent.com/recaeee/PicGo/main/20230117225833.png)
+
+</div>
+
+由此得出结论：**drawSettings.SetShaderPassName(index,shaderTagId)中shaderTagId代表要绘制的Pass的"LightMode"Tag的值，index代表在本次DrawRenderers中不同LightMode之间的Pass的绘制顺序（0最优先）**。但是SetShaderPass的索引只会控制同一物体不同Pass之间绘制顺序，其优先级低于物体离摄像机的距离，如果场景里有物体A和物体B都需要绘制，那会先绘制物体A的"CustomLit"，再绘制物体A的"TestLit"，再绘制物体B的"CustomLit",最后绘制物体B的"TestLit"，而不是A-CustomLit，B-CustomLit，A-TestTag，B-TestTag。此外，其优先级更加低于批处理合批操作，可以说每个合批内部才会考虑Pass的Index。
+
+到此，我们应该算了解了Pass Tag的作用以及SetShaderPassName方法的内部逻辑。接下来回到教程，我们可以创建一个名为Opaque的材质，使用上Lit.shader。
+
+#### 1.2 法线 Normal Vectors
+
+一个光照的物体在绘制时需要考虑很多因素，包括物体表面和光线之间的夹角，我们通过法线表示物体表面的朝向，法线通常是一个**顶点信息，其被定义在模型空间，同时是单位向量（即长度为1）**。因此，我们在LitPass.hlsl的Attributes结构体（顶点着色器输入）中增加**模型空间下的法线**这一数据。
+
+```c#
+//使用结构体定义顶点着色器的输入，一个是为了代码更整洁，一个是为了支持GPU Instancing（获取object的index）
+struct Attributes
+{
+    float3 positionOS:POSITION;
+    //顶点法线信息，用于光照计算，OS代表Object Space，即模型空间
+    float3 normalOS:NORMAL;
+    float2 baseUV:TEXCOORD0;
+    //定义GPU Instancing使用的每个实例的ID，告诉GPU当前绘制的是哪个Object
+    UNITY_VERTEX_INPUT_INSTANCE_ID
+};
+```
+
+同时，我们会在片元着色器中计算光照（顶点着色器当然也可以，但是质量不如片元着色器），因此我们在Varings结构体（片元着色器输入）中也增加**世界空间下的法线**这一数据，这也就意味着我们会在世界空间下计算光照。
+
+```c#
+//为了在片元着色器中获取实例ID，给顶点着色器的输出（即片元着色器的输入）也定义一个结构体
+//命名为Varings是因为它包含的数据可以在同一三角形的片段之间变化
+struct Varyings
+{
+    float4 positionCS:SV_POSITION;
+    //世界空间下的法线信息
+    float3 normalWS:VAR_NORMAL;
+    float2 baseUV:VAR_BASE_UV;
+    //定义每一个片元对应的object的唯一ID
+    UNITY_VERTEX_INPUT_INSTANCE_ID
+};
+```
+
+接下来我们在顶点着色器中使用**TransformObjectToWorldNormal**来将法线从模型空间转换到世界空间。我们使用TransformObjectToWorldNormal而不是TransformObjectToWorld的原因是假如物体的Scale不是(1,1,1)，使用TransformObjectToWorld会得到错误的法线，另外TransformObjectToWorld处理的是点变换，而TransformObjectToWorldNormal内部会调用TransformObjectToWorldDir，处理的是向量变换（因为法线是向量，不考虑Translation）。当物体的Scale不是(1,1,1)时，TransformObjectToWorldNormal内部会将法线与UNITY_MATRIX_I_M相乘进行矫正，但其也就意味着**使用TransformObjectToWorldNormal会将每个物体的UNITY_MATRIX_I_M作为一个矩阵数组传递给GPU**，增大显存的占用。如果说我们明确要渲染的物体的Scale都为(1,1,1)，我们可以通过在shader中增加#pragma instancing_options assumeuniformscaling指令来去掉UNITY_MATRIX_I_M的传递，这时候使用TransformObjectToWorldNormal则会省去IM矩阵这一步，可以当作一种优化方法。
+
+顶点着色器代码如下。
+
+```c#
+Varyings LitPassVertex(Attributes input)
+{
+    Varyings output;
+    //从input中提取实例的ID并将其存储在其他实例化宏所依赖的全局静态变量中
+    UNITY_SETUP_INSTANCE_ID(input);
+    //将实例ID传递给output
+    UNITY_TRANSFER_INSTANCE_ID(input,output);
+    float3 positionWS = TransformObjectToWorld(input.positionOS);
+    output.positionCS = TransformWorldToHClip(positionWS);
+    //使用TransformObjectToWorldNormal将法线从模型空间转换到世界空间，注意不能使用TransformObjectToWorld
+    output.normalWS = TransformObjectToWorldNormal(input.normalOS);
+    //应用纹理ST变换
+    float4 baseST = UNITY_ACCESS_INSTANCED_PROP(UnityPerMaterial,_BaseMap_ST);
+    output.baseUV = input.baseUV * baseST.xy + baseST.zw;
+    return output;
+}
+```
+
+为了验证我们是否在片元着色器中是否正确获取到了世界空间下的法线，我们可以将normalWS作为颜色在片元着色器中输出（这也是我们调试Shader的很重要的一个手段，即当作颜色输出）。显示结果如下，结果符合预期（黑色区域是因为法线向量的负值部分在转到Color时会自动被Clamp到0。
+
+<div align=center>
+
+![20230117234421](https://raw.githubusercontent.com/recaeee/PicGo/main/20230117234421.png)
+
+</div>
+
+#### 1.3 插值法线 Interpolated Normals

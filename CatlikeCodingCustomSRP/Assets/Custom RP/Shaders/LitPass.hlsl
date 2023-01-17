@@ -27,6 +27,8 @@ UNITY_INSTANCING_BUFFER_END(UnityPerMaterial)
 struct Attributes
 {
     float3 positionOS:POSITION;
+    //顶点法线信息，用于光照计算，OS代表Object Space，即模型空间
+    float3 normalOS:NORMAL;
     float2 baseUV:TEXCOORD0;
     //定义GPU Instancing使用的每个实例的ID，告诉GPU当前绘制的是哪个Object
     UNITY_VERTEX_INPUT_INSTANCE_ID
@@ -37,6 +39,8 @@ struct Attributes
 struct Varyings
 {
     float4 positionCS:SV_POSITION;
+    //世界空间下的法线信息
+    float3 normalWS:VAR_NORMAL;
     float2 baseUV:VAR_BASE_UV;
     //定义每一个片元对应的object的唯一ID
     UNITY_VERTEX_INPUT_INSTANCE_ID
@@ -51,6 +55,8 @@ Varyings LitPassVertex(Attributes input)
     UNITY_TRANSFER_INSTANCE_ID(input,output);
     float3 positionWS = TransformObjectToWorld(input.positionOS);
     output.positionCS = TransformWorldToHClip(positionWS);
+    //使用TransformObjectToWorldNormal将法线从模型空间转换到世界空间，注意不能使用TransformObjectToWorld
+    output.normalWS = TransformObjectToWorldNormal(input.normalOS);
     //应用纹理ST变换
     float4 baseST = UNITY_ACCESS_INSTANCED_PROP(UnityPerMaterial,_BaseMap_ST);
     output.baseUV = input.baseUV * baseST.xy + baseST.zw;
@@ -72,6 +78,8 @@ float4 LitPassFragment(Varyings input) : SV_TARGET
     //clip函数的传入参数如果<=0则会丢弃该片元
     clip(base.a - UNITY_ACCESS_INSTANCED_PROP(UnityPerMaterial, _Cutoff));
     #endif
+
+    base.rgb = input.normalWS;
     
     return base;
 }

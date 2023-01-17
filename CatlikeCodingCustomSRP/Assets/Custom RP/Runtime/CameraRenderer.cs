@@ -76,7 +76,7 @@ public partial class CameraRenderer
             enableInstancing = useGPUInstancing
         };
         //增加对Lit.shader的绘制支持,index代表本次DrawRenderer中该pass的绘制优先级（0最先绘制）
-        drawingSettings.SetShaderPassName(1, litShaderTagId);
+        drawingSettings.SetShaderPassName(1, litShaderTagId);//"LightMode"="CustomLit"
         //决定过滤哪些Visible Objects的配置，包括支持的RenderQueue等
         var filteringSettings = new FilteringSettings(RenderQueueRange.opaque);
         //渲染CullingResults内不透明的VisibleObjects
