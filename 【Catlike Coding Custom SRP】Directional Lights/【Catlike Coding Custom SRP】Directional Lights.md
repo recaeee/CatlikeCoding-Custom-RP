@@ -272,3 +272,144 @@ Varyings LitPassVertex(Attributes input)
 </div>
 
 #### 1.3 插值法线 Interpolated Normals
+
+虽然我们在顶点着色器中计算出的世界空间的顶点法线是单位长度的，但是经过线性插值器传递到片元属性时，**其长度就会发生变化**。我们可以在片元着色器中输出片元着色器中插值后的法线长度与1的插值。其结果如下图所示。
+
+<div align=center>
+
+![20230118220740](https://raw.githubusercontent.com/recaeee/PicGo/main/20230118220740.png)
+
+</div>
+
+其原因从教程中的原图很直观的就可以看出，就是线性插值造成的结果。
+
+<div align=center>
+
+![20230118220938](https://raw.githubusercontent.com/recaeee/PicGo/main/20230118220938.png)
+
+</div>
+
+为了消除片元着色器中法线的长度问题，我们在片元着色器中对其进行normalize操作得到归一化的法线向量。
+
+#### 1.4 表面属性 Surface Properties
+
+由于光照模拟的是光线与物体表面的相互作用，因此我们需要设置物体表面的一系列与光照相关的属性。为了更方便地管理，我们创建一个新的Surface.hlsl文件来定义物体表面属性。
+
+```c#
+//定义与光照相关的物体表面属性
+//HLSL编译保护机制
+#ifndef CUSTOM_SURFACE_INCLUDED
+#define CUSTOM_SURFACE_INCLUDED
+
+//物体表面属性，该结构体在片元着色器中被构建
+struct Surface
+{
+    //顶点法线，在这里不明确其坐标空间，因为光照可以在任何空间下计算，在该项目中使用世界空间
+    float3 normal;
+    //表面颜色
+    float3 color;
+    //透明度
+    float alpha;
+};
+
+#endif
+```
+
+在定义完Surface之后，我们就需要在片元着色器中构建Surface用于计算光照（别忘记我们是在片元着色器中计算光照）。部分代码如下。
+
+```c#
+float4 LitPassFragment(Varyings input) : SV_TARGET
+{
+    //从input中提取实例的ID并将其存储在其他实例化宏所依赖的全局静态变量中
+    UNITY_SETUP_INSTANCE_ID(input);
+    //获取采样纹理颜色
+    float4 baseMap = SAMPLE_TEXTURE2D(_BaseMap,sampler_BaseMap,input.baseUV);
+    //通过UNITY_ACCESS_INSTANCED_PROP获取每实例数据
+    float4 baseColor =  UNITY_ACCESS_INSTANCED_PROP(UnityPerMaterial, _BaseColor);
+    float4 base = baseMap * baseColor;
+
+    //只有在_CLIPPING关键字启用时编译该段代码
+    #if defined(_CLIPPING)
+    //clip函数的传入参数如果<=0则会丢弃该片元
+    clip(base.a - UNITY_ACCESS_INSTANCED_PROP(UnityPerMaterial, _Cutoff));
+    #endif
+
+    //在片元着色器中构建Surface结构体，即物体表面属性，构建完成之后就可以在片元着色器中计算光照
+    Surface surface;
+    surface.normal = normalize(input.normalWS);
+    surface.color = base.rgb;
+    surface.alpha = base.a;
+    
+    return float4(surface.color,surface.alpha);
+}
+```
+
+这种多行的赋值看起来可能比较不舒服，但是Shader在编译的时候会生成高度优化的程序，相当于完全重写我们的代码，因此shader代码怎么方便怎么来就行。我们可以通过shader类的Inspector视图下的Compile and show code按钮查看编译后的代码(看起来有点像汇编？但是有些强者可能能够从这些指令几乎反推出Shader写法？）。
+
+<div align=center>
+
+![20230118222541](https://raw.githubusercontent.com/recaeee/PicGo/main/20230118222541.png)
+
+![20230118222628](https://raw.githubusercontent.com/recaeee/PicGo/main/20230118222628.png)
+
+</div>
+
+#### 1.5 计算光照 Calculating Lighting
+
+为了计算光照，我们需要创建一个名为GetLighting的方法，该方法传入一个Surface参数，目前我们暂且让其输出Surface.normal.y。因为这是用来处理光照的方法，因此我们将其放在一个单独的Lighting.hlsl文件中。（hlsl文件逐渐多了起来，虽然确实容易管理了，但我觉得在实际阅读的时候也挺不方便的。）
+
+Lighting.hlsl代码如下。
+
+```c#
+//用来存放计算光照相关的方法
+//HLSL编译保护机制
+#ifndef CUSTOM_LIGHTING_INCLUDE
+#define CUSTON_LIGHTING_INCLUDE
+
+//第一次写的时候这里的Surface会标红，因为只看这一个hlsl文件，我们并未定义Surface
+//但在include到整个Lit.shader中后，编译会正常，至于IDE还标不标红就看IDE造化了...
+//另外，我们需要在include该文件之前include Surface.hlsl，因为依赖关系
+//所有的include操作都放在LitPass.hlsl中
+float3 GetLighting(Surface surface)
+{
+    return surface.normal.y;
+}
+
+#endif
+```
+
+就如代码中注释所说，我们所有的include操作都会放在LitPass.hlsl中（一是容易展示依赖性，二是方便未来替换hlsl文件），因为在Lighting.hlsl中我们是假设我们定义过Surface的，所以在include Lighting.hlsl之前我们需要include Surface.hlsl（是不是和上一章Common.hlsl为SRPCore做一些预定义有点像？）。
+
+现在，我们就可以在片元着色器中调用GetLighting方法来获取光照（目前我们返回的是法线的y值），我们将其返回值作为颜色输出，得到下图效果(看起来仿佛有盏从上垂直向下照射的灯，虽然只是看起来像）。
+
+<div align=center>
+
+![20230118224154](https://raw.githubusercontent.com/recaeee/PicGo/main/20230118224154.png)
+
+</div>
+
+目前，我们可以将GetLighting的结果作为从上往下照射的光线在物体表面形成的漫反射部分，也就是说，我们将surface.normal.y当作**物体表面接收到的光能量**，我们再让其乘以surface.color，surface.color可以理解为物体的**albedo（反射率）** 部分（即物体不吸收并反射出去的光能量），吸收的光能量乘以表面反射率就构成了**Diffuse**部分。
+
+Albedo在拉丁语中是白色的意思，它衡量多少光被表面漫反射。如果反射率不是全白，则部分光能量会被吸收而不是反射。
+
+通常来说，**Albedo就作为材质的MainTex，一个材质的表现效果很大程度依赖于Albedo，它很大程度决定了物体表面呈现出的颜色**。
+
+Lighting.hlsl部分代码如下。
+
+```c#
+float3 GetLighting(Surface surface)
+{
+    //物体表面接收到的光能量 * 物体表面Albedo（反射率）
+    return surface.normal.y * surface.color;
+}
+```
+
+此时，不同于上一张效果图，我们因为乘以了一个albedo（默认为0.5,0.5,0.5)，意味着**有一半的光能量会被吸收而不是反射出来**，因此摄像机看到物体的颜色会变暗一些，如下图所示。
+
+<div align=center>
+
+![20230118233619](https://raw.githubusercontent.com/recaeee/PicGo/main/20230118233619.png)
+
+</div>
+
+#### 2 光线 Lights

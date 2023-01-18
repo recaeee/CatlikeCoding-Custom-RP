@@ -2,6 +2,8 @@
 #define CUSTOM_LIT_PASS_INCLUDED
 
 #include "../ShaderLibrary/Common.hlsl"
+#include "../ShaderLibrary/Surface.hlsl"
+#include "../ShaderLibrary/Lighting.hlsl"
 
 //使用Core RP Library的CBUFFER宏指令包裹材质属性，让Shader支持SRP Batcher，同时在不支持SRP Batcher的平台自动关闭它。
 //CBUFFER_START后要加一个参数，参数表示该C buffer的名字(Unity内置了一些名字，如UnityPerMaterial，UnityPerDraw。
@@ -79,9 +81,15 @@ float4 LitPassFragment(Varyings input) : SV_TARGET
     clip(base.a - UNITY_ACCESS_INSTANCED_PROP(UnityPerMaterial, _Cutoff));
     #endif
 
-    base.rgb = input.normalWS;
+    //在片元着色器中构建Surface结构体，即物体表面属性，构建完成之后就可以在片元着色器中计算光照
+    Surface surface;
+    surface.normal = normalize(input.normalWS);
+    surface.color = base.rgb;
+    surface.alpha = base.a;
+
+    float3 color = GetLighting(surface);
     
-    return base;
+    return float4(color,surface.alpha);
 }
 
 #endif
