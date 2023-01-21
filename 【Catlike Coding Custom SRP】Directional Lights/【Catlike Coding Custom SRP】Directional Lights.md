@@ -412,4 +412,57 @@ float3 GetLighting(Surface surface)
 
 </div>
 
-#### 2 光线 Lights
+#### 2 光源 Lights
+
+目前，我们已经有了物体表面的属性，为了正确表现光照，我们还需要知道光源的属性。在教程中，我们目前只会考虑方向光Directional Lights。一个方向光代表其光源位置距离我们足够远以至于其无需具体的位置信息，对于方向光来说，只通过一个方向信息表示它。这是一种简化模型，但它已经足够用来模拟比如太阳照射到地球上的光或者其他单向光的情况。
+
+#### 2.1 光源数据结构 Light Structure
+
+对于光源的数据结构，我们参考Surface（物体表面属性）也使用一个结构体来存储它。目前，我们对于方向光需要两个信息：**光源颜色和光源方向**。我们将该结构也定义在一个Light.hlsl文件中，同时定义一个GetDirectionalLight方法来返回一个方向光（该方向光的属性由代码写死），其颜色为纯白色，方向为（0，1，0）。注意这里有一个关键点，对于方向光的方向，我们对其的定义是**光线从哪来的**，也就是说**光源方向永远指向光源本身**（也就是和光线射出的方向相反），这么做的原因是因为这会方便之后的光照计算。
+
+Light.hlsl代码如下。
+
+```c#
+//用来定义光源属性
+#ifndef CUSTOM_LIGHT_INCLUDED
+#define CUSTOM_LIGHT_INCLUDED
+
+struct Light
+{
+    //光源颜色
+    float3 color;
+    //光源方向：指向光源
+    float3 direction;
+};
+
+//返回一个配置好的光源，初始化为Color白色，光线从上垂直向下投射（不明确坐标系，但由于教程中在世界空间下计算光照，因此这里多半指的是世界空间）
+Light GetDirectionalLight()
+{
+    Light light;
+    light.color = 1.0;
+    light.direction = float3(0.0,1.0,0.0);
+    return light;
+}
+
+#endif
+```
+
+接下来在LitPass.hlsl中include Lighting.hlsl文件之前include Light.hlsl。到了这里，我们在Lighting文件之前include了2个其依赖的文件：Surface.hlsl（物体表面信息）和Light.hlsl（光源信息）。其依赖关系非常明确，获取到Surface和Light信息后，我们就可以在Lighting.hlsl中进行光照计算。
+
+```c#
+#include "../ShaderLibrary/Surface.hlsl"
+#include "../ShaderLibrary/Light.hlsl"
+#include "../ShaderLibrary/Lighting.hlsl"
+```
+
+#### 2.2 光照函数 Lighting Function
+
+在Lighting.hlsl中，我们首先定义一个IncomingLight方法用来获取物体表面接受到了多少光能量。**对于任何方向投射来的方向光线，我们都通过物体表面法线与光源方向的点积结果作为物体表面接收到的光能量**。这也是最普遍且符合光学原理的，同时我们让其乘以光源颜色，因为光源颜色在物理意义上代表了光源射出RGB三种光线的强度，最后得到的结果就是一个Vector3，RGB值代表物体表面接收到的RGB光能量。
+
+在这里，我们使用到了物体表面法线与光源方向的点积，但是其值可能出现负数的情况（光源照射表面内测），我们是不想出现负值的，因此使用**saturate函数将其clamp到[0,1]区间内**。这样，当照射到表面内侧时，点积结果为0，也就意味着物体表面没有接收到任何光能量。
+
+saturate函数非常之重要，无论是在写任何shader中，我们都会非常频繁使用它（除了saturate，还有lerp、step、smoothstep、clamp等常用的shader数学函数）。在此给出saturate函数的定义：saturate(x): 当x小于0时，返回0；当x属于[0,1]时，返回x；当x大于1时，返回1。在此，也给出一篇参考文章[《常用Shader内置函数及使用总结(持续更新)》](https://zhuanlan.zhihu.com/p/353434000)，包括了一系列常用Shader内置函数的定义。
+
+#### 参考
+
+1. https://zhuanlan.zhihu.com/p/353434000

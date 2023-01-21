@@ -13,4 +13,10 @@ float3 GetLighting(Surface surface)
     return surface.normal.y * surface.color;
 }
 
+//计算物体表面接收到的光能量
+float3 IncomingLight(Surface surface,Light light)
+{
+    return dot(surface.normal,light.direction) * light.color;
+}
+
 #endif
