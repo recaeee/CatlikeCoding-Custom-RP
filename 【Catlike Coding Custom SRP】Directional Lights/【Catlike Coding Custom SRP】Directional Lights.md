@@ -461,8 +461,348 @@ Light GetDirectionalLight()
 
 在这里，我们使用到了物体表面法线与光源方向的点积，但是其值可能出现负数的情况（光源照射表面内测），我们是不想出现负值的，因此使用**saturate函数将其clamp到[0,1]区间内**。这样，当照射到表面内侧时，点积结果为0，也就意味着物体表面没有接收到任何光能量。
 
-saturate函数非常之重要，无论是在写任何shader中，我们都会非常频繁使用它（除了saturate，还有lerp、step、smoothstep、clamp等常用的shader数学函数）。在此给出saturate函数的定义：saturate(x): 当x小于0时，返回0；当x属于[0,1]时，返回x；当x大于1时，返回1。在此，也给出一篇参考文章[《常用Shader内置函数及使用总结(持续更新)》](https://zhuanlan.zhihu.com/p/353434000)，包括了一系列常用Shader内置函数的定义。
+saturate函数非常之重要，无论是在写任何shader中，我们都会非常频繁使用它（除了saturate，还有lerp、step、smoothstep、clamp等常用的shader数学函数）。在此给出saturate函数的定义：**saturate(x): 当x小于0时，返回0；当x属于[0,1]时，返回x；当x大于1时，返回1**。在此，也给出一篇参考文章[《常用Shader内置函数及使用总结(持续更新)》](https://zhuanlan.zhihu.com/p/353434000)，包括了一系列常用Shader内置函数的定义。
+
+IncomingLight方法代码如下。
+
+```c#
+//计算物体表面接收到的光能量
+float3 IncomingLight(Surface surface,Light light)
+{
+    return saturate(dot(surface.normal,light.direction)) * light.color;
+}
+```
+
+到了这里，我们就可以获取到物体表面接收到的光能量，让其与surface.color相乘就能得到物体最终反射出来的光能量（即漫反射部分）。好了，在这里我再梳理一遍漫反射的计算过程，首先光源有一个color属性代表光源发射出RGB三种光的能量，当光线与物体表面相交，我们通过物体表面法线与光源方向的点积结果（并与light.color相乘）作为物体表面接收到的光能量。然后因为物体表面有一个color属性，表示物体不会吸收且反射出来的光能量，与之相乘结果就是最终的Diffuse部分。
+
+我们再次创建一个同名的GetLighting方法（重载）用来得到以上流程的计算结果。
+
+```c#
+//新增的GetLighting方法，传入surface和light，返回真正的光照计算结果，即物体表面最终反射出的RGB光能量
+float3 GetLighting(Surface surface,Light light)
+{
+    return IncomingLight(surface,light) * surface.color;
+}
+```
+
+最后，改写下之前只传入一个surface的GetLighting方法，之前只是简单写死了从上往下投射的光源，在这里我们调用Light.hlsl中的GetDirectionalLight方法来获取方向光源，再调用GetLighting(Surface surface,Light light)来计算光照结果。
+
+在此给出Lighting.hlsl的完整代码，注意函数之间的顺序不能反（不像C#代码那么随便，用到的方法一定要先被编译），它们具有前后依赖关系。
+
+```c#
+//用来存放计算光照相关的方法
+//HLSL编译保护机制
+#ifndef CUSTOM_LIGHTING_INCLUDE
+#define CUSTON_LIGHTING_INCLUDE
+
+//第一次写的时候这里的Surface会标红，因为只看这一个hlsl文件，我们并未定义Surface
+//但在include到整个Lit.shader中后，编译会正常，至于IDE还标不标红就看IDE造化了...
+//另外，我们需要在include该文件之前include Surface.hlsl，因为依赖关系
+//所有的include操作都放在LitPass.hlsl中
+
+//计算物体表面接收到的光能量
+float3 IncomingLight(Surface surface,Light light)
+{
+    return saturate(dot(surface.normal,light.direction)) * light.color;
+}
+
+//新增的GetLighting方法，传入surface和light，返回真正的光照计算结果，即物体表面最终反射出的RGB光能量
+float3 GetLighting(Surface surface,Light light)
+{
+    return IncomingLight(surface,light) * surface.color;
+}
+
+//GetLighting返回光照结果，这个GetLighting只传入一个surface
+float3 GetLighting(Surface surface)
+{
+    //光源从Light.hlsl的GetDirectionalLight获取
+    return GetLighting(surface,GetDirectionalLight());
+}
+
+#endif
+```
+
+#### 2.3 将光源数据传递给GPU Sending Light Data to the GPU
+
+到目前为止，我们的GetDirectionalLight返回的依然还只是一个我们自己创建的一个方向光源，接下来我们需要支持场景里当前正在使用的方向光源。对于Unity默认创建出来的场景，其中会包含一个代表太阳的方向光源，其颜色值味FFF4D6，Rotation为(50,-30,0)。因此，我们需要将场景中的光源数据传递给GPU供Shader使用。
+
+为了确保方向光能被Shader获取，我们需要创建uniform变量（shader中的全局变量），**通过CBUFFER（Constant Buffer）包裹从Cpu发送过来的两个光源属性（即一个color值和一个方向），CBUFFER名为_CustomLight**。
+
+在第二章《Draw Call》中我们使用CBUFFER来实现批处理技术SRP Batch，在这里再回忆一下CBuffer的含义。CBuffer，即Constant Buffer，常量缓冲区，用于存放在GPU进行一次Draw Call指令的渲染操作内保持不变的数据，访问速度很快，但内存总量也很小。CPU可以在每次发出Draw Call指令前对常量缓冲区进行修改，在这里也就是每一帧cpu可以修改常量缓冲区中的光源属性（光源是可实时变化的）。
+
+我们将该CBuffer段放在Light.hlsl的开头。紧接着，在GetDirectionalLight方法中，将传来的这两个值赋值给light。
+
+Light.hlsl部分代码如下。
+
+```c#
+//用CBuffer包裹构造方向光源的两个属性，cpu会每帧传递（修改）这两个属性到GPU的常量缓冲区，对于一次渲染过程这两个值恒定
+CBUFFER_START(_CustomLight)
+    float3 _DirectionalLightColor;
+    float3 _DirectionalLightDirection;
+CBUFFER_END
+
+...
+
+//返回一个方向光源，其颜色与方向取自常量缓冲区，cpu每帧会对该缓冲区赋值或修改
+Light GetDirectionalLight()
+{
+    Light light;
+    light.color = _DirectionalLightColor;
+    light.direction = _DirectionalLightDirection;
+    return light;
+}
+```
+
+到了这里，我们只完成了GPU接收方的工作，接下来我们需要完成CPU这一发送方的工作，那当然就需要编写cs脚本了。首先，我们将建一个Lighting的cs类。在这个Lighting类中，我们做的工作主要就是**获取当前场景中的方向光源（一般只有最重要的一个），然后在DrawCall前将其传递给GPU**。Lighting.cs代码如下所示。
+
+```c#
+using UnityEngine;
+using UnityEngine.Rendering;
+
+//用于把场景中的光源信息通过cpu传递给gpu
+public class Lighting
+{
+    private const string bufferName = "Lighting";
+
+    //获取CBUFFER中对应数据名称的Id，CBUFFER就可以看作Shader的全局变量吧
+    private static int dirLightColorId = Shader.PropertyToID("_DirectionalLightColor"),
+        dirLightDirectionId = Shader.PropertyToID("_DirectionalLightDirection");
+
+    private CommandBuffer buffer = new CommandBuffer()
+    {
+        name = bufferName
+    };
+
+    public void Setup(ScriptableRenderContext context)
+    {
+        //对于传递光源数据到GPU的这一过程，我们可能用不到CommandBuffer下的指令（其实用到了buffer.SetGlobalVector），但我们依然使用它来用于Debug
+        buffer.BeginSample(bufferName);
+        SetupDirectionalLight();
+        buffer.EndSample(bufferName);
+        //再次提醒这里只是提交CommandBuffer到Context的指令队列中，只有等到context.Submit()才会真正依次执行指令
+        context.ExecuteCommandBuffer(buffer);
+        buffer.Clear();
+    }
+
+    void SetupDirectionalLight()
+    {
+        //通过RenderSettings.sun获取场景中默认的最主要的一个方向光，我们可以在Window/Rendering/Lighting Settings中显式配置它。
+        Light light = RenderSettings.sun;
+        //使用CommandBuffer.SetGlobalVector将光源信息传递给GPU
+        //该方法传递的永远是Vector4，即使我们传递的是Vector3，在传递过程中也会隐式转换成Vector4,然后在Shader读取时自动屏蔽掉最后一个分量
+        buffer.SetGlobalVector(dirLightColorId, light.color.linear * light.intensity);
+        //注意光源方向要取反再传递过去
+        buffer.SetGlobalVector(dirLightDirectionId,-light.transform.forward);
+    }
+}
+
+```
+
+在其中，我们通过**RenderSettings.sun**来获取当前场景中默认的最主要的一个方向光。参考[《官方文档](https://docs.unity3d.com/cn/2021.3/ScriptReference/RenderSettings.html)对RenderSettings的描述，**其包含了场景中一系列视觉元素的值，例如雾效和环境光**。另外，每个Scene都有对应的RenderSettings。RenderSettings.sun为程序化天空盒使用的光照，如果没有，则使用最亮的方向光。RenderSettings.sun的类型为Unity内置的**Light类**，该类为Light组件的脚本接口，其值与光照组件在Inspector中显示的值完全匹配。如下图所示，展示了其Inspector下的属性。
+
+<div align=center>
+
+![20230123221810](https://raw.githubusercontent.com/recaeee/PicGo/main/20230123221810.png)
+
+</div>
+
+通过RenderSettings.sun获取到方向光源后，接下来就是如何将其传递给GPU了。由于我们在Light.hlsl中将待传入的两个光源属性（颜色和方向）放入了CBUFFER（常量缓冲区中），而CBUFFER可以看作Shader全局Uniform常量（一次渲染操作过程中，也可以说是一帧中，其值对于GPU不变），因此我们可以通过**CommandBuffer.SetGlobalVector**将光源颜色和方向（两个Vector3）传递给GPU。
+
+这里详细说下CommandBuffer.SetGlobalVector这个方法，**不管我们实际传递给GPU的是几维Vector，其传递的Vector是恒为Vector4的**。在这里，虽然我们的光源颜色和方向都为Vector3，但是在传递到GPU的过程中，其会被隐式转换成Vector4，并在着色器程序读取该值时自动屏蔽掉最后一个分量。这里就涉及到了如何充分地利用好该函数了，我们要尽可能高效地传递数据。另外参考[官方文档](https://docs.unity3d.com/cn/2021.3/ScriptReference/Rendering.CommandBuffer.SetGlobalVector.html)，CommandBuffer.SetGlobalVector是**添加“设置全局着色器向量属性”命令**（这里添加命令再次体现了CPU和GPU异步执行指令的思想）。在文档中另外还提到了**该方法效果与调用Shader.SetGlobalVector相同**，但是吧，虽然不能完全一口咬定，但我还是建议我们使用CommandBuffer而不是Shader，因为之前听说过CommandBuffer和Graphics接口下效果相同的函数，会因为Unity底层实现原理不同，导致性能不同，CommandBuffer下的指令效率会更高些（Shader不确定），因此我的建议是**能用CommandBuffer就用CommandBuffer**。
+
+最后还有一小点需要提一下，这里我们**在CPU中就直接将光源方向取反再传递给GPU**，原因之前提到过啦~
+
+到了这里，我们场景中的方向光就真正被GPU所使用了，得到了史诗级的画质提升~
+
+<div align=center>
+
+![20230123223322](https://raw.githubusercontent.com/recaeee/PicGo/main/20230123223322.png)
+
+</div>
+
+#### 2.4 当前起效的光源 Visible Lights
+
+**当进行视锥体裁剪（Culling）时，Unity也会找到影响当前可视范围的光源（Unity官方叫做可见光源，但我觉得说是起效的光源更合理）**。我们可以使用这一信息，而不是通过RenderSettings.sun这一全局信息。所以，第一步我们要在Lighting.cs中获取到Culling Results，因此在Setup函数中增加一个传入参数CullingResults（并将其存储为Lighting.cs下的一个字段以方便使用）。同时，由于使用CullingResults下的光源信息，我们可以**支持多个光源**，因此，我们创建并使用SetLights方法代替原来的SetupDirectionalLight。
+
+在SetLights方法中，我们使用**NativeArray**类型局部变量来接收cullingResults.visibleLights。NaviteArray是一个类似于数组的结构，但是**提供了与Native Memory buffer（本机内存缓冲区）的连接，从而无任何编组成本，它使得托管C#数组与Native Unity引擎代码更高效地共享数据**。在[官方文档](https://docs.unity3d.com/cn/2021.3/ScriptReference/Unity.Collections.NativeArray_1.html)中提到，在后台，NativeArrays提供的系统允许将它们安全地用于作业，并自动跟踪内存泄漏。
+
+对于NativeArray这一类型，网上有人说它只是强调了使用的是值类型的数组而不是对象数组，但从官方文档已经可以看出来显然不单单是这样了。这篇[论坛文章《What is NatveArray》](https://forum.unity.com/threads/what-is-nativearray.725156/)中提到，**NativeArray只是个容器，不包含任何数据或内存，但它包含指向本机堆上的C++端创建的本机C++对象的句柄或指针**。所以实际的数组不在托管内存中，不受GC影响，NativeArray本质上包含对本机对象的内部阴影，如果没有正确处理它们，这些对象就会丢失引用。因此，**NativeArray实际指向了原生的C++数组**。此外，在Unity JobSystem、ECS体系中也会使用到NativeArray。简单来说，NativeArray的好处就是：分配C++数组，不需要GC，生成销毁成本低等。
+
+在下一节中，我们将通过NativeArray完成多光照的支持。
+
+2.5 多个方向光源 Multiple Directional Lights
+
+使用cullingResults.visibleLights可以支持多个方向光源，但我们需要通过两个Vector4数组和一个代表当前传递的光源数量的Int类型传递给GPU。此外我们还会定义方向光源的最大数量，使用该值来初始化两个Vector4 Buffer。我们将最大值设置为4，通常来说4完全足够了。
+
+cs代码这里就不多说了，都是些很简单的操作，代码中也详细写了注释，主要是构建dirLightColors和dirLightDiections两个数组，然后通过CommandBuffer.SetGlobalVectorArray传递给GPU。主要提的一点是这里在将VisibleLight这一结构体当参数传递时也使用了**ref关键字**，防止了结构体copy的内存分配，VisibleLight这一结构体的内存算比较大的，因此用时间换空间收益比较大。
+
+```c#
+using Unity.Collections;
+using UnityEngine;
+using UnityEngine.Rendering;
+
+//用于把场景中的光源信息通过cpu传递给gpu
+public class Lighting
+{
+    private const string bufferName = "Lighting";
+    //最大方向光源数量
+    private const int maxDirLightCount = 4;
+
+    //获取CBUFFER中对应数据名称的Id，CBUFFER就可以看作Shader的全局变量吧
+    // private static int dirLightColorId = Shader.PropertyToID("_DirectionalLightColor"),
+    //     dirLightDirectionId = Shader.PropertyToID("_DirectionalLightDirection");
+    //改为传递Vector4数组+当前传递光源数
+    private static int dirLightCountId = Shader.PropertyToID("_DirectionalLightCount"),
+        dirLightColorsId = Shader.PropertyToID("_DirectionalLightColors"),
+        dirLightDirectionsId = Shader.PropertyToID("_DirectionalLightDirections");
+
+    private static Vector4[] dirLightColors = new Vector4[maxDirLightCount],
+        dirLightDirections = new Vector4[maxDirLightCount];
+
+    private CommandBuffer buffer = new CommandBuffer()
+    {
+        name = bufferName
+    };
+    
+    
+
+    //主要使用到CullingResults下的光源信息
+    private CullingResults cullingResults;
+
+    //传入参数context用于注入CmmandBuffer指令，cullingResults用于获取当前有效的光源信息
+    public void Setup(ScriptableRenderContext context, CullingResults cullingResults)
+    {
+        //存储到字段方便使用
+        this.cullingResults = cullingResults;
+        //对于传递光源数据到GPU的这一过程，我们可能用不到CommandBuffer下的指令（其实用到了buffer.SetGlobalVector），但我们依然使用它来用于Debug
+        buffer.BeginSample(bufferName);
+        // SetupDirectionalLight();
+        //传递cullingResults下的有效光源
+        SetupLights();
+        buffer.EndSample(bufferName);
+        //再次提醒这里只是提交CommandBuffer到Context的指令队列中，只有等到context.Submit()才会真正依次执行指令
+        context.ExecuteCommandBuffer(buffer);
+        buffer.Clear();
+    }
+
+    //配置Vector4数组中的单个属性
+    //传进的visibleLight添加了ref关键字，防止copy整个VisibleLight结构体（该结构体空间很大）
+    void SetupDirectionalLight(int index,ref VisibleLight visibleLight)
+    {
+        //VisibleLight.finalColor为光源颜色（实际是光源颜色*光源强度，但是默认不是线性颜色空间，需要将Graphics.lightsUseLinearIntensity设置为true）
+        dirLightColors[index] = visibleLight.finalColor;
+        //光源方向为光源localToWorldMatrix的第三列，这里也需要取反
+        dirLightDirections[index] = -visibleLight.localToWorldMatrix.GetColumn(2);
+    }
+
+    void SetupLights()
+    {
+        NativeArray<VisibleLight> visibleLights = cullingResults.visibleLights;
+        //循环配置两个Vector数组
+        int dirLightCount = 0;
+        for (int i = 0; i < visibleLights.Length; i++)
+        {
+            VisibleLight visibleLight = visibleLights[i];
+            
+            //只配置方向光源
+            if (visibleLight.lightType == LightType.Directional)
+            {
+                //设置数组中单个光源的属性
+                SetupDirectionalLight(dirLightCount++, ref visibleLight);
+                if (dirLightCount >= maxDirLightCount)
+                {
+                    //最大不超过4个方向光源
+                    break;
+                }
+            }
+        }
+        
+        //传递当前有效光源数、光源颜色Vector数组、光源方向Vector数组。
+        buffer.SetGlobalInt(dirLightCountId, visibleLights.Length);
+        buffer.SetGlobalVectorArray(dirLightColorsId, dirLightColors);
+        buffer.SetGlobalVectorArray(dirLightDirectionsId, dirLightDirections);
+    }
+}
+```
+
+虽然这一段的代码挺无聊的，但在这里我发现了**特别有意思的一点**！！！我代码写到这一步，在Shader中其实是没有去获取这些Vector数组的，Shader中用的还是原来的单个光源的CBUFFER去渲染。**但此时无论是编辑器下还是运行模式，小球依然会按照之前CBUFFER中遗留的那个单光源的CBUFFER去渲染**！！！也就是说，那个sun光源的属性还在GPU的CBUFFER中，没有被清除，hhhhh，这就是GPU上的常量缓冲区，还是挺有意思的。
+
+#### 2.6 Shader循环 Shader Loop
+
+这一节就是在Shader中接收CPU传来的当前有效光源数（int）和两个Vector数组了。
+
+我们首先使用宏在Shader定义最大光源数（使用宏的原因应该是最大光源数在编译前就确定啦~），然后在名为_CustomLight的CBUFFER中定义当前有效光源数和两个float4数组，注意这里定义数组的格式，同时在Shader中数组在创建时必须明确其长度，创建完毕后不允许修改。Light.hlsl代码如下。
+
+```c#
+//用来定义光源属性
+#ifndef CUSTOM_LIGHT_INCLUDED
+#define CUSTOM_LIGHT_INCLUDED
+
+//使用宏定义最大方向光源数，需要与cpu端匹配
+#define MAX_DIRECTIONAL_LIGHT_COUNT 4
+
+//用CBuffer包裹构造方向光源的两个属性，cpu会每帧传递（修改）这两个属性到GPU的常量缓冲区，对于一次渲染过程这两个值恒定
+CBUFFER_START(_CustomLight)
+    //当前有效光源数
+    int _DirectionalLightCount;
+    //注意CBUFFER中创建数组的格式,在Shader中数组在创建时必须明确其长度，创建完毕后不允许修改
+    float4 _DirectionalLightColors[MAX_DIRECTIONAL_LIGHT_COUNT];
+    float4 _DirectionalLightDirections[MAX_DIRECTIONAL_LIGHT_COUNT];
+CBUFFER_END
+
+struct Light
+{
+    //光源颜色
+    float3 color;
+    //光源方向：指向光源
+    float3 direction;
+};
+
+int GetDirectionalLightCount()
+{
+    return _DirectionalLightCount;
+}
+
+//构造一个方向光源并返回，其颜色与方向取自常量缓冲区的数组中index下标处
+Light GetDirectionalLight(int index)
+{
+    Light light;
+    //float4的rgb和xyz完全等效
+    light.color = _DirectionalLightColors[index].rgb;
+    light.direction = _DirectionalLightDirections[index].xyz;
+    return light;
+}
+
+#endif
+```
+最后，在Lighting.hlsl中的GetLighting(Surface surface)中使用循环来累积所有有效方向光源的光照计算结果。其代码如下。
+
+```c#
+//GetLighting返回光照结果，这个GetLighting只传入一个surface
+float3 GetLighting(Surface surface)
+{
+    //使用循环，累积所有有效方向光源的光照计算结果
+    float3 color = 0.0;
+    for(int i=0;i<GetDirectionalLightCount();i++)
+    {
+        color += GetLighting(surface,GetDirectionalLight(i));
+    }
+    return color;
+}
+```
+
+好了，这一章终于终于完成了一半了！虽然工作内容都很简单，但是抵不住量大吖。最后试试看效果吧，我们的画质又有了一次史诗级的提升！！！（PUA自己还是可以的）
+
+<div align=center>
+
+![20230124012235](https://raw.githubusercontent.com/recaeee/PicGo/main/20230124012235.png)
+
+</div>
+
+如果说实际使用的项目一定只有一个方向光源，那么我们可以去掉这些循环，或者制作着色器变体。但是在该教程中并不会这么做（还是通用为主~）。最好的性能表现总是通过针对具体项目而言去掉所有不需要的东西来实现的。
+
 
 #### 参考
 
 1. https://zhuanlan.zhihu.com/p/353434000
+2. https://forum.unity.com/threads/what-is-nativearray.725156/

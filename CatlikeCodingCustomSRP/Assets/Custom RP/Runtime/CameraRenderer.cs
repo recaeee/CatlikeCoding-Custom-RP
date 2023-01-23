@@ -23,6 +23,9 @@ public partial class CameraRenderer
 
     //存放摄像机剔除结果
     private CullingResults cullingResults;
+    
+    //存放光源处理类
+    private Lighting lighting = new Lighting();
 
     //摄像机渲染器的渲染函数，在当前渲染上下文的基础上渲染当前摄像机
     public void Render(ScriptableRenderContext context, Camera camera, bool useDynamicBatching, bool useGPUInstancing)
@@ -40,6 +43,8 @@ public partial class CameraRenderer
         }
         
         Setup();
+        //将光源信息传递给GPU
+        lighting.Setup(context,cullingResults);
         DrawVisibleGeometry(useDynamicBatching, useGPUInstancing);
         DrawUnsupportedShaders();
         DrawGizmos();

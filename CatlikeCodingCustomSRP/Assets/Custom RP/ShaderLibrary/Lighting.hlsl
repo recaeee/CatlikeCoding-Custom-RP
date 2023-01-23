@@ -7,16 +7,29 @@
 //但在include到整个Lit.shader中后，编译会正常，至于IDE还标不标红就看IDE造化了...
 //另外，我们需要在include该文件之前include Surface.hlsl，因为依赖关系
 //所有的include操作都放在LitPass.hlsl中
-float3 GetLighting(Surface surface)
-{
-    //物体表面接收到的光能量 * 物体表面Albedo（反射率）
-    return surface.normal.y * surface.color;
-}
 
 //计算物体表面接收到的光能量
 float3 IncomingLight(Surface surface,Light light)
 {
-    return dot(surface.normal,light.direction) * light.color;
+    return saturate(dot(surface.normal,light.direction)) * light.color;
+}
+
+//新增的GetLighting方法，传入surface和light，返回真正的光照计算结果，即物体表面最终反射出的RGB光能量
+float3 GetLighting(Surface surface,Light light)
+{
+    return IncomingLight(surface,light) * surface.color;
+}
+
+//GetLighting返回光照结果，这个GetLighting只传入一个surface
+float3 GetLighting(Surface surface)
+{
+    //使用循环，累积所有有效方向光源的光照计算结果
+    float3 color = 0.0;
+    for(int i=0;i<GetDirectionalLightCount();i++)
+    {
+        color += GetLighting(surface,GetDirectionalLight(i));
+    }
+    return color;
 }
 
 #endif

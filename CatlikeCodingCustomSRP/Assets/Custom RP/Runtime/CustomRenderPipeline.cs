@@ -16,6 +16,8 @@ public class CustomRenderPipeline : RenderPipeline
         this.useGPUInstancing = useGPUInstancing;
         //配置SRP Batch
         GraphicsSettings.useScriptableRenderPipelineBatching = useSRPBatcher;
+        //设置光源颜色为线性空间
+        GraphicsSettings.lightsUseLinearIntensity = true;
     }
     
     //必须重写Render函数，渲染管线实例每帧执行Render函数
