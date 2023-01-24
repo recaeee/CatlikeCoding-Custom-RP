@@ -4,6 +4,7 @@
 #include "../ShaderLibrary/Common.hlsl"
 #include "../ShaderLibrary/Surface.hlsl"
 #include "../ShaderLibrary/Light.hlsl"
+#include "../ShaderLibrary/BRDF.hlsl"
 #include "../ShaderLibrary/Lighting.hlsl"
 
 //使用Core RP Library的CBUFFER宏指令包裹材质属性，让Shader支持SRP Batcher，同时在不支持SRP Batcher的平台自动关闭它。
@@ -24,6 +25,10 @@ UNITY_INSTANCING_BUFFER_START(UnityPerMaterial)
     UNITY_DEFINE_INSTANCED_PROP(float4,_BaseColor)
     //透明度测试阈值
     UNITY_DEFINE_INSTANCED_PROP(float,_Cutoff)
+    //金属度
+    UNITY_DEFINE_INSTANCED_PROP(float,_Metallic)
+    //光滑度
+    UNITY_DEFINE_INSTANCED_PROP(float,_Smoothness)
 UNITY_INSTANCING_BUFFER_END(UnityPerMaterial)
 
 //使用结构体定义顶点着色器的输入，一个是为了代码更整洁，一个是为了支持GPU Instancing（获取object的index）
@@ -87,8 +92,10 @@ float4 LitPassFragment(Varyings input) : SV_TARGET
     surface.normal = normalize(input.normalWS);
     surface.color = base.rgb;
     surface.alpha = base.a;
-
-    float3 color = GetLighting(surface);
+    surface.metallic = UNITY_ACCESS_INSTANCED_PROP(UnityPerMaterial,_Metallic);
+    surface.smoothness = UNITY_ACCESS_INSTANCED_PROP(UnityPerMaterial,_Smoothness);
+    BRDF brdf = GetBRDF(surface);
+    float3 color = GetLighting(surface,brdf);
     
     return float4(color,surface.alpha);
 }

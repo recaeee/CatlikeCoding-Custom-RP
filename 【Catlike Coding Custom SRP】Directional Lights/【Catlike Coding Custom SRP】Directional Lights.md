@@ -801,6 +801,196 @@ float3 GetLighting(Surface surface)
 
 如果说实际使用的项目一定只有一个方向光源，那么我们可以去掉这些循环，或者制作着色器变体。但是在该教程中并不会这么做（还是通用为主~）。最好的性能表现总是通过针对具体项目而言去掉所有不需要的东西来实现的。
 
+#### 2.7 Shader目标等级 Shader Target Level
+
+对于累积多个光源的光照计算结果，具有可变次数的循环曾经对于着色器来说是一个难题，虽然现代的GPU可以轻松处理它们，但OpenGL ES 2.0和WebGL 1.0图形API无法处理此类循环。虽然我们可以进行分支控制或者硬编码来避免这类问题，但也会导致生成的着色器代码较为混乱，且性能非常差。因此，在本教程中选择直接屏蔽这些不支持的图形API，我们通过#pragma target 3.5指令将着色器通道的Target Level，从而避免为它们编译OpenGL ES 2.0着色器变体，我们对Unlit和Lit两个Shader都添加该指令。
+
+```c#
+    SubShader
+    {
+        Pass
+        {
+            //设置Pass Tags，最关键的Tag为"LightMode"
+            Tags
+            {
+                "LightMode" = "CustomLit"
+            }
+            //设置混合模式
+            Blend [_SrcBlend] [_DstBlend]
+            ZWrite [_ZWrite]
+
+            HLSLPROGRAM
+            //不生成OpenGL ES 2.0等图形API的着色器变体，其不支持可变次数的循环与线性颜色空间
+            #pragma target 3.5
+            //告诉Unity启用_CLIPPING关键字时编译不同版本的Shader
+            #pragma shader_feature _CLIPPING
+            //这一指令会让Unity生成两个该Shader的变体，一个支持GPU Instancing，另一个不支持。
+            #pragma multi_compile_instancing
+            #pragma vertex LitPassVertex
+            #pragma fragment LitPassFragment
+            #include "LitPass.hlsl"
+            ENDHLSL
+        }
+    }
+```
+
+#### 3 双向反射分布函数 BRDF
+
+我们目前使用的是简化的光照模型，并且只表现出了光照的漫反射部分。我们可以通过**BRDF（Bidirectional Reflectance Distribution Function）函数**来获取更加多变和真实的光照。业界内有许多这样的函数，在本教程中，我们会使用和URP一样的BRDF函数，该函数牺牲了一些画面真实感来换取性能。**BRDF函数也是PBR（Physically Based Rendering基于物理的渲染）的核心**。对于PBR和BRDF，推荐观看[闫大大的《GAMES 101》](https://www.bilibili.com/video/BV1X7411F744/?spm_id_from=333.999.0.0&vd_source=ff0e8ecb1d7ea963eef228f6c1cc6431)里相关章节（哈哈哈应该大部分人都看过了吧）。
+
+#### 3.1 入射光 Incoming Light
+
+当一束光正面（垂直）打到物体表面的一块区域（一块区域可以理解为Fragment所反应的实际区域，因为我们是在片元着色器中计算光照，同时也可以理解成微积分上的dS）时，其所有能量都会被这块区域接收（之后会造成反射和折射）。这是入射光L（起点为物体表面）与物体表面法线N完全同向的情况，因此N·L结果为1.当它们不完全同向时，有一部分光束会错过物体表面，因此只会有一部分能量被物体表面接收。因此，**我们通过N·L来表示物体表面一块区域（Fragment）接收到入射光的总能量**。如果N·L为负值，则Clamp到0，表示物体表面不受该光照影响。
+
+<div align=center>
+
+![20230124125650](https://raw.githubusercontent.com/recaeee/PicGo/main/20230124125650.png)
+
+</div>
+
+#### 3.2 出射光 Outgoing Light
+
+从物理学上讲，摄像机（或者说我们的眼睛）并不能直接看到直接打在物体表面的光，我们只能看见**光打在物体表面后反射出来且刚刚好打到摄像机（或者我们的眼睛）的光**。如果物体表面是个完全平坦的平面镜，那么入射光会完全根据物理定律（入射角等于反射角）被反射出去。这部分反射出去的光被定义为**Specular Reflection**（镜面反射，Specular更多时候被理解为**高光**，因此这里我更偏向于叫它**Specular**）。虽然这是简化的模型，但依然足够了。
+
+<div align=center>
+
+![20230124130844](https://raw.githubusercontent.com/recaeee/PicGo/main/20230124130844.png)
+
+</div>
+
+但是当物体表面不完全平坦（实际上完全平坦只是理论上存在，因此实际的物体表面必然是不完全平坦的）时，打在物体表面的光线会被散射（Scattered，即被散射成好几道不同方向的出射光），这是由于物体表面的一块区域是由许多更小的、起伏不平的、方向不同的微表面组成的。这会将入射光分散成多个不同方向的小量出射光（小量是因为能量守恒），而这就会模糊Specular部分，看起来就是物体表面的高光区域变大。但是这些多方向的反射也就导致了另一个好处，就是**即使我们不完全对着高光的出射光方向，我们也能看到一些高光部分**。
+
+<div align=center>
+
+![20230124131923](https://raw.githubusercontent.com/recaeee/PicGo/main/20230124131923.png)
+
+</div>
+
+以上我们讨论的都是高光部分，即Specular，但除此之外，**入射光线有一部分会穿透物体表面，在物体表面一定厚度内四处弹射，并以完全不可预测的角度从向任意方向射出物体表面**，这部分光能量就是**Diffuse部分**（漫反射部分）。举一个极端的情况，我们有一个完美的漫反射表面，可以在所有可能的方向上均匀地散射光。这就是我们目前在Lit中的光照模型。
+
+<div align=center>
+
+![20230124132702](https://raw.githubusercontent.com/recaeee/PicGo/main/20230124132702.png)
+
+</div>
+
+总的来说，**高光Specular是入射光的一部分在物体表面直接进行一次反射（未进入物体表面）的光能量，而漫反射Diffuse是入射光的一部分穿透了物体表面，在物体表面一定厚度的分子结构内四处弹射，最后以一个不可预测的角度再射出物体表面的光能量**。
+
+在PBR光照模型中，无论摄像机在哪，接收到来自物体表面的Diffuse光能量永远是相等的（即，我们假定物体表面会均匀地反射漫反射部分，其实我们也完全计算不了，因为它是完全不可预测的）。但这也意味着进入摄像机的光能量会远远少于物体表面接收到的光能量，因为各个方向都发射出去了Diffuse能量（而且我们也不一定能接收到Specular部分），能量守恒定律不可打破~在PBR模型下，对于光源来说，我们需要重新思考它的属性（Light结构体），对于光源颜色来说，其定义变为了**光垂直照射到完全漫反射的白色物体表面时摄像机观察到的光能量**。此外还有其他配置光源的方法，例如可以增加lumen或lux这些光学意义上的参数来模拟更真实的光源，但我们会使用当前的简化PBR模型，即只用光源颜色（实际上考虑光线能量强弱，即Intensity）。
+
+#### 3.3 物体表面属性 Surface Properties
+
+物体表面可以被完全漫反射，也可以被完全镜面反射（Specular），或者结合两者。我们有许多种方式来控制它们。在这里我们使用Metallic Workflow（金属工作流），这需要我们向Lit.shader的Properties中增加两个物体表面属性。
+
+第一个属性衡量物体表面是金属的还是非金属的。我们将该值控制在[0,1]区间内，1代表物体表面是完全金属的。我们将其默认值设置为完全非金属的，即该值为0。
+
+第二个属性衡量物体表面有多光滑。同样，我们将该值控制在[0,1]区间内，0代表完全不光滑（完全粗糙），1代表完全光滑。我们将其默认值设置为0.5。
+
+将这两个属性也加入名为UnityPerMater的CBUFFER（该CBUFFER段是我们之前用于SRPBatcher的）。接下来，我们在Surface结构体中增加这两个属性。然后在LitPassFragment中构造surface时通过CBUFFER赋值这两个属性。GPU接收端完成了，接下来实现CPU发送端的支持，在PerObjectMaterialProperties.cs中增加对这两个属性的支持。
+
+这一块就不贴代码了，只是按以前的写法增加两个参数罢了。
+
+#### 3.4 BRDF属性 BRDF Properties
+
+我们将使用物体表面属性来计算BRDF方程。**BRDF方程返回的结果是摄像机接收到的物体表面反射出的光线，其中包括了Diffuse和Specular两部分**。我们需要将物体表面颜色分成Diffuse和Specular两部分，我们也需要知道物体表面多粗糙。因此创建一个BRDF结构体（表示BRDF方程需要传入的参数）来存储这三个值，将其单独存放在一个BRDF.hlsl中。
+
+同时在BRDF.hlsl中增加一个GetBRDF(Surface surface)方法，我们根据传入的surface来返回一个BRDF信息。然后，在Lighting.hlsl中的两个GetLightings都增加BRDF传入参数，并在计算漫反射项时将物体表面接收的光能量乘以brdf.diffuse（原本我们乘以的是surface.color，现在变成了brdf.diffuse，但其实此时我们的brdf.diffuse=surface.color，因此此时实际计算结果不变）。BRDF.hlsl代码如下。
+
+```c#
+//定义BRDF函数需要传入的参数
+#ifndef CUSTOM_BRDF_INCLUDED
+#define CUSTOM_BRDF_INCLUDED
+
+struct BRDF
+{
+    //物体表面漫反射颜色
+    float3 diffuse;
+    //物体表面高光颜色
+    float3 specular;
+    //物体表面粗糙度
+    float3 roughness;
+};
+
+BRDF GetBRDF(Surface surface)
+{
+    BRDF brdf;
+    //diffuse等于物体表面反射的光能量color
+    brdf.diffuse = surface.color;
+    //暂时使用固定值
+    brdf.specular = 0.0;
+    brdf.roughness = 1.0;
+    return brdf;
+}
+
+#endif
+```
+
+#### 3.5 反射率 Reflectivity
+
+物体表面的反射程度各不相同，但一般来说，**金属度（Metallic）高的物体表面将几乎所有接收到的光能量以Specular（高光反射）的形式反射出去，同时漫反射量几乎为0**。所以我们定义Reflectivity（specular反射率）等于物体表面的metallic属性。同时，我们需要在构造brdf.diffuse时乘以oneMinusReflectivity（遵循能量守恒，Reflectivity值反应Specular占比，而1-Reflectivity值就反应了Diffuse占比）。此时，我们转到Unity中，此时调整物体的_Metallic属性会使物体表面亮度发生变化。**_Metallic越高，物体表面越暗，这是因为我们目前只计算了Diffuse部分，Specular部分还没计算**(高光部分相当于被吃掉了）。GetBRDF方法代码如下。
+
+```c#
+BRDF GetBRDF(Surface surface)
+{
+    BRDF brdf;
+
+    //Reflectivity表示Specular反射率
+    float oneMinusReflectivity = 1.0 - surface.metallic;
+    //diffuse等于物体表面不吸收的光能量color*（1-高光反射率）
+    brdf.diffuse = surface.color * oneMinusReflectivity;
+    //暂时使用固定值
+    brdf.specular = 0.0;
+    brdf.roughness = 1.0;
+    return brdf;
+}
+```
+
+在现实中，一些光能量也会从电介质（dielectric，由金属度决定）表面反射回来，呈现出高光。**非金属的（高光）反射率通常各不相同，但平均值为0.04**。我们通过宏指令将0.04定义为最小的高光反射率Reflectivity，同时增加一个OneMinusReflectivity方法来将OneMinuesReflectivity（漫反射占比）的返回值控制在[0,0.96]范围内，这个范围和URP相匹配。
+
+好了，我们在构建oneMinusReflectivity时调用该方法，此时我们依然没有计算Specular，因此游戏内依然看不出啥变化。
+
+部分代码如下。
+
+```c#
+//宏定义最小高光反射率
+#define MIN_REFLECTIVITY 0.04
+
+float OneMinusReflectivity(float metallic)
+{
+    //将漫反射反射率控制在[0,0.96]内
+    float range = 1.0 - MIN_REFLECTIVITY;
+    return range - metallic * range;
+}
+```
+
+#### 3.6 高光颜色 Specular Color
+
+当光线以一种方式反射时，其不能同时以另一种方式反射，意味着对于一份光能量，其只能选择漫反射或者高光反射中的一种形式。这被称为**能量守恒**，这意味着出射光总能量不能超过入射光总能量（可能有一部分被物体吸收，即反射不出去）。因此，高光占比(specular)应该等于surface.color(物体不吸收的光能量，即用于反射的所有光能量)-brdf.diffuse（漫反射占比）。
+
+但是此时，我们忽略了一个物理规律，即金属会影响高光的颜色，而非金属不会。我们通过对MIN_REFLECTIVITY(最小高光反射度)和surface.color（物体不吸收的光能量）插值获取到brdf.specular（高光反射占比）。这就意味着，**当物体表面的金属度越低，高光能量占比越少，同时高光的颜色也越接近白色；而当物体表面金属度越高时，高光能量占比越多，同时高光的颜色越接近物体表面实际不吸收的光的颜色**。
+
+部分代码如下。
+
+```c#
+BRDF GetBRDF(Surface surface)
+{
+    BRDF brdf;
+
+    //Reflectivity表示Specular反射率，oneMinusReflectivity表示Diffuse反射率
+    float oneMinusReflectivity = OneMinusReflectivity(surface.metallic);
+    //diffuse等于物体表面不吸收的光能量color*（1-高光反射率）
+    brdf.diffuse = surface.color * oneMinusReflectivity;
+    //高光占比(specular)应该等于surface.color(物体不吸收的光能量，即用于反射的所有光能量)-brdf.diffuse（漫反射占比）
+    //同时，高光占比越高，高光颜色越接近物体本身反射颜色，高光占比越低，高光颜色越接近白色，因此使用lerp
+    brdf.specular = lerp(MIN_REFLECTIVITY,surface.color,surface.metallic);
+    brdf.roughness = 1.0;
+    return brdf;
+}
+```
+
+#### 3.7 粗糙度 Roughness
+
+
 
 #### 参考
 

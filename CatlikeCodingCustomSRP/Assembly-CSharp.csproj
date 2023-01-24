@@ -55,6 +55,7 @@
      <None Include="Assets\Custom RP\Shaders\LitPass.hlsl" />
      <None Include="Assets\Custom RP\Shaders\Unlit.shader" />
      <None Include="Assets\Custom RP\Shaders\UnlitPass.hlsl" />
+     <None Include="Assets\Custom RP\ShaderLibrary\BRDF.hlsl" />
      <None Include="Assets\Custom RP\ShaderLibrary\Surface.hlsl" />
      <None Include="Assets\Custom RP\ShaderLibrary\Lighting.hlsl" />
      <Reference Include="UnityEngine">
