@@ -16,4 +16,7 @@ float4x4 unity_MatrixVP;
 float4x4 unity_MatrixV;
 float4x4 glstate_matrix_projection;
 
+//获取内置参数：摄像机世界空间位置
+float3 _WorldSpaceCameraPos;
+
 #endif

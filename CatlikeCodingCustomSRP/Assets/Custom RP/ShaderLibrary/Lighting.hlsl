@@ -17,7 +17,7 @@ float3 IncomingLight(Surface surface,Light light)
 //新增的GetLighting方法，传入surface和light，返回真正的光照计算结果，即物体表面最终反射出的RGB光能量
 float3 GetLighting(Surface surface,BRDF brdf,Light light)
 {
-    return IncomingLight(surface,light) * brdf.diffuse;
+    return IncomingLight(surface,light) * DirectBRDF(surface,brdf,light);
 }
 
 //GetLighting返回光照结果，这个GetLighting只传入一个surface

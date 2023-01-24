@@ -47,6 +47,7 @@ struct Attributes
 struct Varyings
 {
     float4 positionCS:SV_POSITION;
+    float3 positionWS:VAR_POSITION;
     //世界空间下的法线信息
     float3 normalWS:VAR_NORMAL;
     float2 baseUV:VAR_BASE_UV;
@@ -61,8 +62,8 @@ Varyings LitPassVertex(Attributes input)
     UNITY_SETUP_INSTANCE_ID(input);
     //将实例ID传递给output
     UNITY_TRANSFER_INSTANCE_ID(input,output);
-    float3 positionWS = TransformObjectToWorld(input.positionOS);
-    output.positionCS = TransformWorldToHClip(positionWS);
+    output.positionWS = TransformObjectToWorld(input.positionOS);
+    output.positionCS = TransformWorldToHClip(output.positionWS);
     //使用TransformObjectToWorldNormal将法线从模型空间转换到世界空间，注意不能使用TransformObjectToWorld
     output.normalWS = TransformObjectToWorldNormal(input.normalOS);
     //应用纹理ST变换
@@ -90,6 +91,7 @@ float4 LitPassFragment(Varyings input) : SV_TARGET
     //在片元着色器中构建Surface结构体，即物体表面属性，构建完成之后就可以在片元着色器中计算光照
     Surface surface;
     surface.normal = normalize(input.normalWS);
+    surface.viewDirection = normalize(_WorldSpaceCameraPos - input.positionWS);
     surface.color = base.rgb;
     surface.alpha = base.a;
     surface.metallic = UNITY_ACCESS_INSTANCED_PROP(UnityPerMaterial,_Metallic);

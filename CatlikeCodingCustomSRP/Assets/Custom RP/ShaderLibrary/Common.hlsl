@@ -3,6 +3,7 @@
 #define CUSTOM_COMMON_INCLUDED
 
 #include "Packages/com.unity.render-pipelines.core/ShaderLibrary/Common.hlsl"
+#include "Packages/com.unity.render-pipelines.core/ShaderLibrary/CommonMaterial.hlsl"
 #include "UnityInput.hlsl"
 
 //将Unity内置着色器变量转换为SRP库需要的变量
@@ -19,5 +20,11 @@
 //UnityInstancing.hlsl重新定义了一些宏用于访问实例化数据数组
 #include "Packages/com.unity.render-pipelines.core/ShaderLibrary/UnityInstancing.hlsl"
 #include "Packages/com.unity.render-pipelines.core/ShaderLibrary/SpaceTransforms.hlsl"
+
+//平方操作的函数，用于计算高光项的BRDF方程
+float Square(float v)
+{
+    return v * v;
+}
 
 #endif

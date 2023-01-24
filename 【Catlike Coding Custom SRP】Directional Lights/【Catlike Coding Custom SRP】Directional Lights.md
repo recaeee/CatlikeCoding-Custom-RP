@@ -990,6 +990,139 @@ BRDF GetBRDF(Surface surface)
 
 #### 3.7 粗糙度 Roughness
 
+**粗糙度Roughness**是光滑度的对立，因此我们可以简单地让（Perceptual）Roughness = 1 - Smoothness（那为什么不直接用Smoothness啊喂！）。Core RP库带有一个函数来实现这个功能，函数名叫**PerceptualSmoothnessToPerceptualRoughness**（翻译过来为感知平滑度转到感知粗糙度，感知粗糙度就是1-smoothness）。我们将使用此方法来明确平滑度以及粗糙度被定义为可感知的（不明所以）。我们可以通过PertualRoughnessToRough转换为实际粗糙度，该函数将感知粗糙度平方（那也就是说感知粗糙度的平方=实际粗糙度）。这与Disney光照模型相匹配，这样做是因为在编辑材质时调整感知值更直观。
+
+为了使用这两个函数，我们在Common.hlsl中include CoreRP中的CommonMaterial.hlsl。GetBRDF代码如下。
+
+```c#
+BRDF GetBRDF(Surface surface)
+{
+    BRDF brdf;
+
+    //Reflectivity表示Specular反射率，oneMinusReflectivity表示Diffuse反射率
+    float oneMinusReflectivity = OneMinusReflectivity(surface.metallic);
+    //diffuse等于物体表面不吸收的光能量color*（1-高光反射率）
+    brdf.diffuse = surface.color * oneMinusReflectivity;
+    //高光占比(specular)应该等于surface.color(物体不吸收的光能量，即用于反射的所有光能量)-brdf.diffuse（漫反射占比）
+    //同时，高光占比越高，高光颜色越接近物体本身反射颜色，高光占比越低，高光颜色越接近白色，因此使用lerp
+    brdf.specular = lerp(MIN_REFLECTIVITY,surface.color,surface.metallic);
+    //先根据surface.smoothness计算出感知粗糙度，再将感知粗糙度转为实际粗糙度
+    //PerceptualSmoothnessToPerceptualRoughness返回值就是(1-surface.smoothness)
+    float perceptualRoughness = PerceptualSmoothnessToPerceptualRoughness(surface.smoothness);
+    //PerceptualRoughnessToRoughness返回的就是perceptualRoughness的平方
+    brdf.roughness = PerceptualRoughnessToRoughness(perceptualRoughness);
+    return brdf;
+}
+```
+
+这两个函数名字看起来很可怕，但实际上一个就是取1-x，一个就是x平方。（吐槽：怕不是有什么大病取这么高级的名字）以下为这两个函数代码。
+
+```c#
+real PerceptualSmoothnessToPerceptualRoughness(real perceptualSmoothness)
+{
+    return (1.0 - perceptualSmoothness);
+}
+
+real PerceptualRoughnessToRoughness(real perceptualRoughness)
+{
+    return perceptualRoughness * perceptualRoughness;
+}
+```
+
+由此，我们对BRDF的漫反射占比diffuse、高光占比specular、粗糙度roughness都构造完毕了。
+
+#### 3.8 观察方向 View Direction
+
+为了确定观察方向View Direction是否与高光反射方向有多契合，我们需要知道摄像机的位置（世界空间）。Unity内置提供了该数据，其名为**_WorldSpaceCameraPos**，所以我们在UnityInput.hlsl中声明它。为了在片元着色器中获取View Direction（注意这里也是从物体表面指向摄像机），我们需要得到片元在世界空间下的位置（这也是常见操作了）。
+
+另外，我们将View Direction作为surface的一个信息，因此将其定义在Surface结构体中。
+
+这段代码就不贴了，就多加了几个参数。
+
+#### 3.9 高光强度 Specular Strength
+
+接下来终于就可以计算我们的高光项Specular了。我们观察到的**高光反射的强度取决于我们观察方向有多契合高光反射角度**。我们使用与URP中相同的公式，其为Minimalist CookTorrance BRDF的变体。公式中包含了许多平方操作，因此我们先在Common.hlsl中增加一个平方函数。接下来，在BRDF.hlsl中增加一个SpecularStrength方法来计算高光项。该方法传入一个Surface，一个BRDF，一个Light。
+
+**计算Specular的BRDF函数**如下（其中点积操作会被saturate）。
+
+<div align=center>
+
+$$SpecularStregth = \frac{r^2}{d^2 max(0.1,(L \cdot H)^2)n}$$
+
+其中
+**r**:粗糙度
+**d**:$d = (N \cdot H)^2(r^2 - 1) + 1.0001$
+**N**:物体表面法线
+**L**:光源方向
+**H**:$H = normalize(L + V)$
+**n**:$n = 4r + 2$
+
+</div>
+
+BRDF理论过于复杂，无法一言以蔽之，我们无需完全理解其为啥是这样（如果需要可以查看URP的Lighting.hlsl来获取代码和参考）。
+
+SpecularStrength代码如下。
+
+```c#
+//计算高光强度Specular Strength
+float SpecularStrength(Surface surface,BRDF brdf,Light light)
+{
+    //SafeNormalize防止观察方向与物体表面法线完全反向时，其相加结果为0向量导致归一化时除以0
+    float3 h = SafeNormalize(light.direction + surface.viewDirection);
+    float nh2 = Square(saturate(dot(surface.normal,h)));
+    float lh2 = Square(saturate(dot(light.direction,h)));
+    float r2 = Square(brdf.roughness);
+    float d2 = Square(nh2 * (r2 - 1.0) + 1.0001);
+    float normalization = brdf.roughness * 4.0 + 2.0;
+    return r2 / (d2 * max(0.1,lh2) * normalization);
+}
+```
+
+接下来，增加一个DirectBRDF方法，其返回对于一个Surface、一个BRDF和一个方向光Light的光照计算结果（这里得到的是**反射出的光能量比例**，不考虑物体表面接收到的总光能量，其包括了高光和漫反射）。
+
+```c#
+//计算反射出的总光能量比例（漫反射+高光）
+float3 DirectBRDF(Surface surface,BRDF brdf,Light light)
+{
+    //观察角度接收到的高光能量 * 物体表面反射出的高光能量 + 各向均匀的漫反射能量
+    return SpecularStrength(surface,brdf,light) * brdf.specular + brdf.diffuse;
+}
+```
+
+最后，在GetLighting中让DirectBRDF（反射出的光能量比例）与物体表面接收到的光能量总和相乘，得到最终光照计算结果。
+
+我们的画质又得到了一次史诗级的增强~
+
+<div align=center>
+
+![20230125003619](https://raw.githubusercontent.com/recaeee/PicGo/main/20230125003619.png)
+
+</div>
+
+从效果图上看，我们确实得到了高光Specular部分，在物体表面会有局部的亮光。对于完全粗糙（Smoothness=0）的材质，其反射光会完全由Diffuse组成，无任何Specular，如下图所示。
+
+<div align=center>
+
+![20230125003927](https://raw.githubusercontent.com/recaeee/PicGo/main/20230125003927.png)
+
+</div>
+
+Smoothness值较大的表面会有一个范围更小的高光（但其高光总能量不变，意味着无论高光范围多大，其累积能量就正好等于高光能量，如果高光范围大，高光就整体偏暗，此时Metallic为0，因此高光总能量为总量的0.04，0.04是宏定义的默认值别忘记了~）。Smoothness=0.8如下图所示。
+
+<div align=center>
+
+![20230125004338](https://raw.githubusercontent.com/recaeee/PicGo/main/20230125004338.png)
+
+</div>
+
+当Smoothness为1时，高光范围无穷小，我们就完全看不到了(和Smoothness为0效果一样了hhh）。Smoothness=1如下图所示。
+
+<div align=center>
+
+![20230125004529](https://raw.githubusercontent.com/recaeee/PicGo/main/20230125004529.png)
+
+</div>
+
 
 
 #### 参考
