@@ -1,15 +1,23 @@
 # 【Catlike Coding Custom SRP学习之旅——3】Directional Lights
 #### 写在前面
 
+好了，大大方方承认自己是个懒人了，第三章拖了这么久（距离第二章整整过了一个月，虽然其过程中写了一片关于Unity纹理串流的文章，但不能作为托更的理由），一方面这一章主要在实现基础的光照模型吧，该篇文章虽然内容非常多（写地手酸啊~），但其实主要都花在了编写Lit.shader上了。也算是对这整套花里胡哨的Shader写法熟悉了很多（这么多hlsl文件，看着头疼）。之后的教程我会尽力缩减文字量，然后更多地对单个知识点进行拓展深入（这么多字我受不住，看的人也受不住哇！）
+
 以下是原教程链接与我的Github工程（Github上会实时同步最新进度）：
 
 [CatlikeCoding-SRP-Tutorial](https://catlikecoding.com/unity/tutorials/custom-srp/)
 
 [我的Github工程](https://github.com/recaeee/CatlikeCoding-Custom-RP)
 
-#### 方向光 Directional Lights
-
 --- 
+
+<div align=center>
+
+![20230125133818](https://raw.githubusercontent.com/recaeee/PicGo/main/20230125133818.png)
+
+</div>
+
+#### 方向光 Directional Lights
 
 #### 1 光照 Lighting
 
@@ -206,6 +214,12 @@ Lit.shader关键代码如下。
 由此得出结论：**drawSettings.SetShaderPassName(index,shaderTagId)中shaderTagId代表要绘制的Pass的"LightMode"Tag的值，index代表在本次DrawRenderers中不同LightMode之间的Pass的绘制顺序（0最优先）**。但是SetShaderPass的索引只会控制同一物体不同Pass之间绘制顺序，其优先级低于物体离摄像机的距离，如果场景里有物体A和物体B都需要绘制，那会先绘制物体A的"CustomLit"，再绘制物体A的"TestLit"，再绘制物体B的"CustomLit",最后绘制物体B的"TestLit"，而不是A-CustomLit，B-CustomLit，A-TestTag，B-TestTag。此外，其优先级更加低于批处理合批操作，可以说每个合批内部才会考虑Pass的Index。
 
 到此，我们应该算了解了Pass Tag的作用以及SetShaderPassName方法的内部逻辑。接下来回到教程，我们可以创建一个名为Opaque的材质，使用上Lit.shader。
+
+<div align=center>
+
+![20230125133925](https://raw.githubusercontent.com/recaeee/PicGo/main/20230125133925.png)
+
+</div>
 
 #### 1.2 法线 Normal Vectors
 
@@ -414,6 +428,12 @@ float3 GetLighting(Surface surface)
 
 #### 2 光源 Lights
 
+<div align=center>
+
+![20230125134009](https://raw.githubusercontent.com/recaeee/PicGo/main/20230125134009.png)
+
+</div>
+
 目前，我们已经有了物体表面的属性，为了正确表现光照，我们还需要知道光源的属性。在教程中，我们目前只会考虑方向光Directional Lights。一个方向光代表其光源位置距离我们足够远以至于其无需具体的位置信息，对于方向光来说，只通过一个方向信息表示它。这是一种简化模型，但它已经足够用来模拟比如太阳照射到地球上的光或者其他单向光的情况。
 
 #### 2.1 光源数据结构 Light Structure
@@ -621,6 +641,12 @@ public class Lighting
 </div>
 
 #### 2.4 当前起效的光源 Visible Lights
+
+<div align=center>
+
+![20230125134100](https://raw.githubusercontent.com/recaeee/PicGo/main/20230125134100.png)
+
+</div>
 
 **当进行视锥体裁剪（Culling）时，Unity也会找到影响当前可视范围的光源（Unity官方叫做可见光源，但我觉得说是起效的光源更合理）**。我们可以使用这一信息，而不是通过RenderSettings.sun这一全局信息。所以，第一步我们要在Lighting.cs中获取到Culling Results，因此在Setup函数中增加一个传入参数CullingResults（并将其存储为Lighting.cs下的一个字段以方便使用）。同时，由于使用CullingResults下的光源信息，我们可以**支持多个光源**，因此，我们创建并使用SetLights方法代替原来的SetupDirectionalLight。
 
@@ -835,6 +861,12 @@ float3 GetLighting(Surface surface)
 ```
 
 #### 3 双向反射分布函数 BRDF
+
+<div align=center>
+
+![20230125134133](https://raw.githubusercontent.com/recaeee/PicGo/main/20230125134133.png)
+
+</div>
 
 我们目前使用的是简化的光照模型，并且只表现出了光照的漫反射部分。我们可以通过**BRDF（Bidirectional Reflectance Distribution Function）函数**来获取更加多变和真实的光照。业界内有许多这样的函数，在本教程中，我们会使用和URP一样的BRDF函数，该函数牺牲了一些画面真实感来换取性能。**BRDF函数也是PBR（Physically Based Rendering基于物理的渲染）的核心**。对于PBR和BRDF，推荐观看[闫大大的《GAMES 101》](https://www.bilibili.com/video/BV1X7411F744/?spm_id_from=333.999.0.0&vd_source=ff0e8ecb1d7ea963eef228f6c1cc6431)里相关章节（哈哈哈应该大部分人都看过了吧）。
 
@@ -1123,9 +1155,357 @@ Smoothness值较大的表面会有一个范围更小的高光（但其高光总�
 
 </div>
 
+由于能量守恒定律，在Smoothness高的表面上高光强度会很高，因为大部分入射光线都以Specular形式反射。另外，当金属度越高时，高光的颜色越接近物体本身接收到的光颜色（Surface.color），金属度越低时，高光的颜色越接近白色。
 
+目前我们就拥有了比较真实的直接光照，虽然特别对于金属高的材质来说，整体光照计算结果都偏暗（这是因为我们还不支持环境光照，目前的计算结果更符合物体处于一个纯黑的环境中）。
+
+#### 3.10 程序化生成小球 Mesh Ball
+
+第二章我们做了个程序化DrawInstance生成几千个小球，我们也替换上我们的新Lit材质。这里代码也不贴了，不太重要，看下最后效果吧。
+
+<div align=center>
+
+![20230125100729](https://raw.githubusercontent.com/recaeee/PicGo/main/20230125100729.png)
+
+</div>
+
+#### 4 透明材质 Transparency
+
+目前我们只实现了Opaque物体的Lit材质，接下来我们实现其对Tranparent物体的支持。对于一个Alpha Blend的物体，其片元颜色依然会根据Alpha值渐变，但我们让其**Diffuse值也随着Alpha值渐变**。这对于Diffuse项是具有物理意义的，因为只有一部分光会被反射，而其余光会穿过物体表面。对于我们目前的shader，我们是支持这点的，但是对于Specular项，我们不希望它随着Alpha降低而淡去。
+
+#### 4.1 预乘透明度 Premultiplied Alpha
+
+我们目前要实现的是让diffuse项随alhpa渐变，而specluar项依然维持其值。由于Sorce Blend Mode（透明Unlit材质使用的模式）会将所有计算结果都应用其混合，因此不再适用（不能将Specular单独分离出来）。因此，我们**将Source值设置为1，同时Destination依然使用one-minus-source-alpha**。
+
+这样，我们的Specular项就会完全保留下来了，但是同时Diffuse项也完全保留下来了。我们通过让brdf的diffuse属性乘以surface.alpha（Premultiplied Alpha）来让Diffuse项依然保留渐变。这种方法就叫做**Premultiplied Alpha**。这时候，Alpha Blend的材质效果就不错了，如下图所示。
+
+<div align=center>
+
+![20230125102311](https://raw.githubusercontent.com/recaeee/PicGo/main/20230125102311.png)
+
+</div>
+
+#### 4.2 预乘开关 Premultiplication Toggle
+
+对Diffuse预乘Alpha之后，我们能很容易将材质变为玻璃（高光部分常显示，即使Alpha为0），而常规的Alpha Blend只能根据Alpha值着色。但因为可能我们需要的并不是玻璃材质，因此我们将这个Premultiplied制作乘一个开关，默认为关闭。
+
+我们通过一个_PREMULTIPLY_ALPHA关键字来决定在LitPassFragment中使用哪种方法。
+
+这块代码也不贴啦（篇幅已经过长了，忽略一些不重要的内容，关键字的写法之前也有过，观看原教程或者照着自己写一下吧~）。
+
+#### 5 Shader图形界面 Shader GUI
+
+<div align=center>
+
+![20230125134250](https://raw.githubusercontent.com/recaeee/PicGo/main/20230125134250.png)
+
+</div>
+
+我们现在对Lit.shader实现了多种渲染模式（不透明、Alpha Clip、两种Alpha Blend），而每种渲染模式都需要单独地配置。为了更方便地让材质在不同模式间切换，我们对材质的Inspector视图上增加一些按钮来提供预设值配置（一些编辑器下的代码啦~对于渲染来说不是很重要，但是作为引擎，可能也会接触一些编辑工具的开发，因此最好也是熟悉一下**Unity编辑器拓展**）。
+
+#### 5.1 自定义Shader GUI Custom Shader GUI
+
+我们需要为使用Lit.shader的材质重写其Inspector窗口。首先在Lit.shader中加入一行标识。
+
+```c#
+    //告诉Unity编辑器使用CustomShaderGUI类的一个实例来为使用Lit.shader的材质绘制Inspector窗口
+    CustomEditor "CustomShaderGUI"
+```
+
+接下来创建CustomShaderGUI.cs，**继承自ShaderGUI类**，重写其OnGUI方法。
+
+```c#
+using UnityEditor;
+using UnityEngine;
+using UnityEngine.Rendering;
+
+public class CustomShaderGUI : ShaderGUI
+{
+    public override void OnGUI(MaterialEditor materialEditor, MaterialProperty[] properties)
+    {
+        //首先绘制材质Inspector下原本所有的GUI，例如材质的Properties等
+        base.OnGUI(materialEditor, properties);
+    }
+}
+```
+
+#### 5.2 设置属性和关键字 Setting Properties and Keywords
+
+在该脚本中，我们需要获取三个东西：1，MaterialEditor（Unity 材质编辑器）；2，materials（正在检查的所有对象的数组，说人话就是当前选中的所有同一shader下的材质）；3，properties（材质可编辑属性）。
+
+接着我们编写重载形式的SetProperty函数，提供对float类型属性和关键字的设置，并以字段的形式提供编辑接口。（代码不放这啦，最后写完一起放）
+
+#### 5.3 预设值按钮 Preset Buttons
+
+我们希望在Inspector上加几个按钮来一键设置预设值，在编写Button方法前，我们需要通过**editor.RegisterPropertyChangeUndo(name)**方法来让每个Button支持编辑器下的**undo**操作（撤回）。接下来，为每个预设创建一个单独的方法。
+
+因为这些Preset Button不会被频繁使用，因此将其在Inspector下折叠成一个标签，使用EditorGUILayout.FoldOut方法（具体方法使用不介绍啦~）。
+
+好了，贴上CustonShaderGUI.cs代码和材质Inspector效果图吧。
+
+```c#
+using UnityEditor;
+using UnityEngine;
+using UnityEngine.Rendering;
+
+public class CustomShaderGUI : ShaderGUI
+{
+    //存储当前折叠标签状态
+    private bool showPresets;
+    
+    private MaterialEditor editor;
+    //当前选中的material是数组形式，因为我们可以同时多选多个使用同一Shader的材质进行编辑。
+    private Object[] materials;
+    private MaterialProperty[] properties;
+    
+    public override void OnGUI(MaterialEditor materialEditor, MaterialProperty[] properties)
+    {
+        //首先绘制材质Inspector下原本所有的GUI，例如材质的Properties等
+        base.OnGUI(materialEditor, properties);
+        //将editor、material、properties存储到字段中
+        editor = materialEditor;
+        materials = materialEditor.targets;
+        this.properties = properties;
+        
+        //增加一行空行
+        EditorGUILayout.Space();
+        //设置折叠标签
+        showPresets = EditorGUILayout.Foldout(showPresets, "Presets", true);
+        if (showPresets)
+        {
+            //绘制各个渲染模式预设值的按钮
+            OpaquePreset();
+            ClipPreset();
+            FadePreset();
+            TransparentPreset();
+        }
+    }
+
+    /// <summary>
+    /// 设置float类型的材质属性
+    /// </summary>
+    /// <param name="name">Property名字</param>
+    /// <param name="value">要设定的值</param>
+    void SetProperty(string name, float value)
+    {
+        //ShaderGUI下的FindProperty函数，返回一个名为name的MaterialProperty
+        FindProperty(name, properties).floatValue = value;
+    }
+
+    /// <summary>
+    /// 对选中的所有材质设置shader关键字
+    /// </summary>
+    /// <param name="keyword">关键字名称</param>
+    /// <param name="enabled">是否开启</param>
+    void SetKeyword(string keyword, bool enabled)
+    {
+        if (enabled)
+        {
+            foreach (Material m in materials)
+            {
+                m.EnableKeyword(keyword);
+            }
+        }
+        else
+        {
+            foreach (Material m in materials)
+            {
+                m.DisableKeyword(keyword);
+            }
+        }
+    }
+
+    /// <summary>
+    /// 因为我们之前在Lit.shader中使用Toggle标签的属性来切换关键字，因此在通过代码开关关键字时也要对Toggle操作以同步
+    /// </summary>
+    /// <param name="name">关键字对应Toggle名字</param>
+    /// <param name="keyword">关键字名字</param>
+    /// <param name="value">是否开关</param>
+    void SetProperty(string name, string keyword, bool value)
+    {
+        //设置Toggle
+        SetProperty(name, value ? 1f : 0f);
+        //设置关键字
+        SetKeyword(keyword, value);
+    }
+
+    private bool Clipping
+    {
+        set => SetProperty("_Clipping", "_CLIPPING", value);
+    }
+
+    private bool PremultiplyAlpha
+    {
+        set => SetProperty("_PremulAlpha", "_PREMULTIPLY_ALPHA", value);
+    }
+
+    private BlendMode SrcBlend
+    {
+        set => SetProperty("_SrcBlend", (float)value);
+    }
+
+    private BlendMode DstBlend
+    {
+        set => SetProperty("_DstBlend", (float)value);
+    }
+
+    private bool ZWrite
+    {
+        set => SetProperty("_ZWrite", value ? 1f : 0f);
+    }
+
+    RenderQueue RenderQueue
+    {
+        set
+        {
+            foreach (Material m in materials)
+            {
+                m.renderQueue = (int)value;
+            }
+        }
+    }
+
+    /// <summary>
+    /// 在设置预设值前，为Button注册撤回操作
+    /// </summary>
+    /// <param name="name">Button要设置的渲染模式</param>
+    /// <returns></returns>
+    bool PresetButton(string name)
+    {
+        if (GUILayout.Button(name))
+        {
+            editor.RegisterPropertyChangeUndo(name);
+            return true;
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// 设置为Opaque材质预设值
+    /// </summary>
+    void OpaquePreset()
+    {
+        if (PresetButton("Opaque"))
+        {
+            Clipping = false;
+            PremultiplyAlpha = false;
+            SrcBlend = BlendMode.One;
+            DstBlend = BlendMode.Zero;
+            ZWrite = true;
+            RenderQueue = RenderQueue.Geometry;
+        }
+    }
+    
+    /// <summary>
+    /// 设置为Alpha Clip材质预设值
+    /// </summary>
+    void ClipPreset()
+    {
+        if (PresetButton("Clip"))
+        {
+            Clipping = true;
+            PremultiplyAlpha = false;
+            SrcBlend = BlendMode.SrcAlpha;
+            DstBlend = BlendMode.OneMinusSrcAlpha;
+            ZWrite = true;
+            RenderQueue = RenderQueue.AlphaTest;
+        }
+    }
+    
+    /// <summary>
+    /// 设置为Fade(Alpha Blend,高光不完全保留)材质预设值
+    /// </summary>
+    void FadePreset()
+    {
+        if (PresetButton("Fade"))
+        {
+            Clipping = false;
+            PremultiplyAlpha = false;
+            SrcBlend = BlendMode.SrcAlpha;
+            DstBlend = BlendMode.OneMinusSrcAlpha;
+            ZWrite = false;
+            RenderQueue = RenderQueue.Transparent;
+        }
+    }
+    
+    /// <summary>
+    /// 设置为Transparent(开启Premultiply Alpha)材质预设值
+    /// </summary>
+    void TransparentPreset()
+    {
+        if (PresetButton("Transparent"))
+        {
+            Clipping = false;
+            PremultiplyAlpha = true;
+            SrcBlend = BlendMode.One;
+            DstBlend = BlendMode.OneMinusSrcAlpha;
+            ZWrite = false;
+            RenderQueue = RenderQueue.Transparent;
+        }
+    }
+}
+```
+
+<div align=center>
+
+![20230125130420](https://raw.githubusercontent.com/recaeee/PicGo/main/20230125130420.png)
+
+</div>
+
+#### 5.4 Unlit材质预设值 Presets for Unlit
+
+我们也可以为Unlit.shader也使用这个自定义的Inspector。但因为Unlit.shader和Lit.shader的属性各不相同，我们在SetProperty中增加一个保护机制，防止设置为null的材质属性。（增加方法很简单，不贴代码啦~）
+
+#### 5.5 不透明 No Transparency
+
+目前这些预设就为Unlit.shader工作了，虽然目前Transparent Mode对应的一些属性Unlit.shadar并没有(比如_PremulAlpha），我们再将一些Unlit不支持的渲染模式在其材质Inspector上隐藏起来。
+
+部分关键代码如下。
+
+```c#
+    /// <summary>
+    /// 该函数判断当前材质是否包含该属性
+    /// </summary>
+    /// <param name="name">属性名称</param>
+    /// <returns></returns>
+    bool HasProperty(string name) => FindProperty(name, properties, false) != null;
+
+    private bool HasPremultiplyAlpha => HasProperty("_PremulAlpha");
+
+    ...
+
+        /// <summary>
+    /// 设置为Transparent(开启Premultiply Alpha)材质预设值
+    /// </summary>
+    void TransparentPreset()
+    {
+        if (HasPremultiplyAlpha && PresetButton("Transparent"))
+        {
+            Clipping = false;
+            PremultiplyAlpha = true;
+            SrcBlend = BlendMode.One;
+            DstBlend = BlendMode.OneMinusSrcAlpha;
+            ZWrite = false;
+            RenderQueue = RenderQueue.Transparent;
+        }
+    }
+```
+
+由此，Unlit.shader下的材质的Inspector视图下不会出现Transparent的Button。这一章终于结束啦！！
+
+<div align=center>
+
+![20230125132612](https://raw.githubusercontent.com/recaeee/PicGo/main/20230125132612.png)
+
+</div>
+
+#### 结束语
+
+欸，这一章拖得也是比较久了，在写的过程中，写着写着，发现自己写的越来越啰嗦，很多地方直接照着原教程翻译（翻译不用动脑啊喂！），没有去把单个知识点挖掘地比较深。另外，也有一些比较尴尬的点就是，PBR本身理论过于复杂，我也不是很了解，但就教程来说，知道如何用以及其特性勉强足够。总之，我会在下篇文章上少些啰嗦的话，多一些知识点的拓展和深入吧。这篇文章我自己都感觉太长了hhhh，不知道有人会不会看完呢~
 
 #### 参考
 
 1. https://zhuanlan.zhihu.com/p/353434000
 2. https://forum.unity.com/threads/what-is-nativearray.725156/
+3. 所有涩图均来自wlop大大

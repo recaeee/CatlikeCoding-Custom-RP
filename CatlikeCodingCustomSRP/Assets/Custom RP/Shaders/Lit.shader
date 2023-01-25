@@ -17,6 +17,8 @@ Shader "Custom RP/Lit"
         _Metallic("Metallic",Range(0,1)) = 0
         //光滑度
         _Smoothness("Smoothness",Range(0,1)) = 0.5
+        //Premultiply Alpha的关键字
+        [Toggle(_PREMULTIPLY_ALPHA)]_PremulAlpha("Premultiply Alpha",Float) = 0
         
         //混合模式使用的值，其值应该是枚举值，但是这里使用float
         //特性用于在Editor下更方便编辑
@@ -44,6 +46,8 @@ Shader "Custom RP/Lit"
             #pragma target 3.5
             //告诉Unity启用_CLIPPING关键字时编译不同版本的Shader
             #pragma shader_feature _CLIPPING
+            //定义diffuse项是否使用Premultiplied alpha的关键字
+            #pragma shader_feature _PREMULTIPLY_ALPHA
             //这一指令会让Unity生成两个该Shader的变体，一个支持GPU Instancing，另一个不支持。
             #pragma multi_compile_instancing
             #pragma vertex LitPassVertex
@@ -52,4 +56,7 @@ Shader "Custom RP/Lit"
             ENDHLSL
         }
     }
+    
+    //告诉Unity编辑器使用CustomShaderGUI类的一个实例来为使用Lit.shader的材质绘制Inspector窗口
+    CustomEditor "CustomShaderGUI"
 }

@@ -22,7 +22,7 @@ struct BRDF
     float3 roughness;
 };
 
-BRDF GetBRDF(Surface surface)
+BRDF GetBRDF(Surface surface,bool applyAlphaToDiffuse = false)
 {
     BRDF brdf;
 
@@ -30,6 +30,11 @@ BRDF GetBRDF(Surface surface)
     float oneMinusReflectivity = OneMinusReflectivity(surface.metallic);
     //diffuse等于物体表面不吸收的光能量color*（1-高光反射率）
     brdf.diffuse = surface.color * oneMinusReflectivity;
+    //考虑Alpha Blend的材质，diffuse项Premultiplied Alpha
+    if(applyAlphaToDiffuse)
+    {
+        brdf.diffuse *= surface.alpha;
+    }
     //高光占比(specular)应该等于surface.color(物体不吸收的光能量，即用于反射的所有光能量)-brdf.diffuse（漫反射占比）
     //同时，高光占比越高，高光颜色越接近物体本身反射颜色，高光占比越低，高光颜色越接近白色，因此使用lerp
     brdf.specular = lerp(MIN_REFLECTIVITY,surface.color,surface.metallic);
