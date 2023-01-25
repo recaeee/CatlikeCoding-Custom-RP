@@ -24,20 +24,23 @@ public class Lighting
     {
         name = bufferName
     };
-    
-    
 
     //主要使用到CullingResults下的光源信息
     private CullingResults cullingResults;
+    
+    //渲染阴影贴图相关
+    private Shadows shadows = new Shadows();
 
     //传入参数context用于注入CmmandBuffer指令，cullingResults用于获取当前有效的光源信息
-    public void Setup(ScriptableRenderContext context, CullingResults cullingResults)
+    public void Setup(ScriptableRenderContext context, CullingResults cullingResults,
+        ShadowSettings shadowSettings)
     {
         //存储到字段方便使用
         this.cullingResults = cullingResults;
         //对于传递光源数据到GPU的这一过程，我们可能用不到CommandBuffer下的指令（其实用到了buffer.SetGlobalVector），但我们依然使用它来用于Debug
         buffer.BeginSample(bufferName);
-        // SetupDirectionalLight();
+        //渲染阴影相关
+        shadows.Setup(context, cullingResults, shadowSettings);
         //传递cullingResults下的有效光源
         SetupLights();
         buffer.EndSample(bufferName);
@@ -54,6 +57,8 @@ public class Lighting
         dirLightColors[index] = visibleLight.finalColor;
         //光源方向为光源localToWorldMatrix的第三列，这里也需要取反
         dirLightDirections[index] = -visibleLight.localToWorldMatrix.GetColumn(2);
+        //配置阴影管理类，让其配置好支持阴影的光源相关信息
+        shadows.ReserveDirectionalShadows(visibleLight.light, index);
     }
 
     void SetupLights()

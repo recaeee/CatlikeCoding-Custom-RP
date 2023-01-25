@@ -8,12 +8,15 @@ public class CustomRenderPipeline : RenderPipeline
     
     //批处理配置
     private bool useDynamicBatching, useGPUInstancing;
+    //Shadow Map配置
+    private ShadowSettings shadowSettings;
 
     //构造函数，初始化管线的一些属性
-    public CustomRenderPipeline(bool useDynamicBatching, bool useGPUInstancing, bool useSRPBatcher)
+    public CustomRenderPipeline(bool useDynamicBatching, bool useGPUInstancing, bool useSRPBatcher, ShadowSettings shadowSettings)
     {
         this.useDynamicBatching = useDynamicBatching;
         this.useGPUInstancing = useGPUInstancing;
+        this.shadowSettings = shadowSettings;
         //配置SRP Batch
         GraphicsSettings.useScriptableRenderPipelineBatching = useSRPBatcher;
         //设置光源颜色为线性空间
@@ -26,7 +29,7 @@ public class CustomRenderPipeline : RenderPipeline
         //按顺序渲染每个摄像机
         foreach (var camera in cameras)
         {
-            renderer.Render(context, camera, useDynamicBatching, useGPUInstancing);
+            renderer.Render(context, camera, useDynamicBatching, useGPUInstancing, shadowSettings);
         }
     }
 }
