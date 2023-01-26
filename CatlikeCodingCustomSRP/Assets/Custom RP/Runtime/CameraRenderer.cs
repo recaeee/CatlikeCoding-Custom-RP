@@ -50,6 +50,8 @@ public partial class CameraRenderer
         DrawVisibleGeometry(useDynamicBatching, useGPUInstancing);
         DrawUnsupportedShaders();
         DrawGizmos();
+        //完成渲染后，清理光源（包括阴影）相关内存
+        lighting.Cleanup();
         Submit();
     }
 

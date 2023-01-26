@@ -1,6 +1,6 @@
 # 【Catlike Coding Custom SRP学习之旅——4】Directional Shadows
 #### 写在前面
-接下来到方向光的阴影实现了，阴影实现本身不难，难点在于其锯齿的消除以及阴影级联技术的实现，在很多实际项目中，会针对阴影贴图Shadow Map做性能优化，例如分离动静态物体渲染多张阴影图、旋转阴影图方向等等。另外，阴影也是提升游戏质感的一项重要技术，在完成这一章后，我们就能获取一个比较好的渲染效果了。另外，这一章我会尽力压缩篇幅，只提关键知识点。
+接下来到方向光的阴影实现了，阴影实现本身不难，难点在于其锯齿的消除以及阴影级联技术的实现，在很多实际项目中，会针对阴影贴图Shadow Map做性能优化，例如分离动静态物体渲染多张阴影图、旋转阴影图方向等等。另外，阴影也是提升游戏质感的一项重要技术，在完成这一章后，我们就能获取一个比较好的渲染效果了。另外，这一章我会尽力压缩篇幅，主要拓展和深入关键知识点，希望做到即使不是实际去搭建SRP管线，大家也能得到一些收获。
 
 以下是原教程链接与我的Github工程（Github上会实时同步最新进度）：
 
@@ -9,6 +9,12 @@
 [我的Github工程](https://github.com/recaeee/CatlikeCoding-Custom-RP)
 
 --- 
+
+<div align=center>
+
+![20230126233237](https://raw.githubusercontent.com/recaeee/PicGo/main/20230126233237.png)
+
+</div>
 
 #### 方向光阴影 Directional Shadows
 
@@ -26,6 +32,11 @@
 
 参考[《Unity官方文档：阴影距离》](https://docs.unity3d.com/cn/2021.3/Manual/shadow-distance.html)，maxDistance决定**Unity渲染实时阴影的最大距离**（与摄像机之间的距离）。另外，**如果当前摄像机远平面小于阴影距离，Unity将使用摄像机远平面而不是maxDistance**。这也是非常合理的，毕竟超出摄像机远平面的物体本身就不会被渲染的。
 
+这里我提出我对**Unity渲染阴影贴图底层逻辑**的简单猜测。
+
+1. 根据maxDistance（或者摄像机远平面）得到一个BoundingBox（也可能是个球型），这个BoundingBox容纳了所有要渲染阴影的物体。
+2. 根据这个BoundingBox（也可能是个球星）和方向光源的方向，确定渲染阴影贴图用的正交摄像机的视锥体，渲染阴影贴图。
+
 ShadowSettings.cs代码如下。
 
 ```c#
@@ -37,8 +48,8 @@ public class ShadowSettings
 {
     //maxDistance决定视野内多大范围会被渲染到阴影贴图上，距离主摄像机超过maxDistance的物体不会被渲染在阴影贴图上
     //其具体逻辑猜测如下：
-    //1.根据maxDistance（或者摄像机远平面）得到一个BoundingBox，这个BoundingBox容纳了所有要渲染阴影的物体
-    //2.根据这个BoundingBox和方向光源的方向，确定渲染阴影贴图用的正交摄像机的视锥体，渲染阴影贴图
+    //1.根据maxDistance（或者摄像机远平面）得到一个BoundingBox（也可能是个球型），这个BoundingBox容纳了所有要渲染阴影的物体
+    //2.根据这个BoundingBox（也可能是个球型）和方向光源的方向，确定渲染阴影贴图用的正交摄像机的视锥体，渲染阴影贴图
     [Min(0f)] public float maxDistance = 100f;
 
     //阴影贴图的所有尺寸，使用枚举防止出现其他数值，范围为256-8192。
@@ -127,7 +138,7 @@ public class Shadows
         this.settings = settings;
     }
 
-    void ExcecuteBuffer()
+    void ExecuteBuffer()
     {
         context.ExecuteCommandBuffer(buffer);
         buffer.Clear();
@@ -177,10 +188,168 @@ public class Shadows
     }
 ```
 
+这里使用到了cullingResults.GetShadowCasterBounds((int lightIndex, out Bounds outBounds)方法，该方法传入lightIndex为阴**影投射光源的索引**，outBounds为**要计算的边界**，其返回值为一个bool值，**如果光源影响了场景中至少一个阴影投射对象，则为true**。该方法返回封装了可见阴影投射物的包围盒（包围盒里的物体就是所有需要渲染到阴影贴图上的物体），其可用于动态调整级联范围。
+
 #### 1.5 创建阴影图集 Creating the Shadow Atlas
+
+首先说明一点，为什么这里把阴影贴图叫做ShadowAtlas（阴影图集）而不是ShadowMap。因为，**我们的这一张用作阴影贴图的Texture上，不一定只渲染一个光源的ShadowMap**，可能左上角一块是给光源1的，右上角一块是给光源2的，因此其更符合图集的概念，因此叫做ShadowAtlas。
+
+在这一章节里，我们通过每帧调用CommandBuffer.GetTemporaryRT来**每帧申请一张Render Texture**用作ShadowAtlas。默认申请的RT为RGBA的格式，但对于这张RT，**我们只需要DepthBUffer**，我们通过传入参数RenderTextureFormat.Shadowmap来设置该RT的格式，并且我们将其精度设置为**32bits**。
+
+在这里，我们详细了解下**CommandBuffer.GetTempooraryRT**这一非常重要的方法，我们先来看下我们的实际使用形式。
+
+```c#
+        //使用CommandBuffer.GetTemporaryRT来申请一张RT用于Shadow Atlas，注意我们每帧自己管理其释放
+        //第一个参数为该RT的标识，第二个参数为RT的宽，第三个参数为RT的高
+        //第四个参数为depthBuffer的位宽，第五个参数为过滤模式，第六个参数为RT格式
+        //我们使用32bits的Float位宽，URP使用的是16bits
+        buffer.GetTemporaryRT(dirShadowAtlasId, atlasSize, atlasSize,
+            32, FilterMode.Bilinear, RenderTextureFormat.Shadowmap);
+```
+
+CommandBuffer.GetTemporaryRT的作用是**添加“获取临时渲染纹理”命令**。
+
+对于其传入参数，依次进行解释。
+
+1. int nameID:此纹理的着色器属性名称(Shader.PropertyToID)，该方法自动会**使用nameID将这张RT设置为全局着色器属性**。
+2. int width:RT像素宽度，-1表示摄像机像素宽度。
+3. int height:RT像素高度，-1表示摄像机像素高度。
+4. int depthBuffer:深度缓冲区位数（精度）
+5. FilterMode filter:纹理过滤模式，对于ShadowAtlas我们使用Linear模式。
+6. RenderTextureFormat format:渲染纹理的格式，其默认位ARGB32，但ShadowAtlas不应该使用ARGB32。我们使用**RenderTextureFormat.Shadowmap**，其表示使用原生阴影贴图纹理渲染格式，GPU会自动根据当前显卡支持的格式设置ShadowMap的格式（**对于不支持Shadowmap格式的显卡，阴影将会使用RenderTextrueFormat.Depth格式**）。
+
+另外，我们通过CommandBuffer.GetTemporaryRT申请的RT必须**由我们手动管理其释放**，**使用ReleaseTemporaryRT 并传递相同的 nameID 可释放临时渲染纹理**。未显式释放的所有RT将会在摄像机完成渲染后或在Graphics.ExecuteCommandBuffer完成后被删除。
+
+另外，我们在不渲染阴影时生成一张1x1的ShadowAtlas防止在WebGL 2.0平台上的一些Error（具体Error在代码注释中，不是很重要）。
+
+```c#
+    //渲染阴影贴图
+    public void Render()
+    {
+        if (ShadowedDirectionalLightCount > 0)
+        {
+            RenderDirectionalShadows();
+        }
+        else
+        {
+            //如果因为某种原因不需要渲染阴影，我们也需要生成一张1x1大小的ShadowAtlas
+            //因为WebGL 2.0下如果某个材质包含ShadowMap但在加载时丢失了ShadowMap会报错
+            buffer.GetTemporaryRT(dirShadowAtlasId, 1, 1, 32, FilterMode.Bilinear, RenderTextureFormat.Shadowmap);
+        }
+    }
+```
+
+我们在申请完ShadowAtlas之后，我们需要**告诉GPU接下来的一系列操作的目标RT是ShadowAtlas这张RT**，而不是摄像机的RenderTarget。我们通过**buffer.SetRenderTarget**这一方法来实现。我们来看下我们在代码中的具体使用，然后来分析其逻辑。
+
+```c#
+        //告诉GPU接下来操作的RT是ShadowAtlas
+        //RenderBufferLoadAction.DontCare意味着在将其设置为RenderTarget之后，我们不关心它的初始状态，不对其进行任何预处理
+        //RenderBufferStoreAction.Store意味着完成这张RT上的所有渲染指令之后（要切换为下一个RenderTarget时），我们会将其存储到显存中为后续采样使用
+        buffer.SetRenderTarget(dirShadowAtlasId, RenderBufferLoadAction.DontCare, RenderBufferStoreAction.Store);
+```
+
+CommandBuffer.SetRenderTarget的作用是**添加“设置活动的渲染目标”命令**。
+
+对于其传入参数，依次进行解释。
+
+1. RenderTargetIdentifier rt:**RT的唯一标识**，我们有多种方式来标识RT，例如RenderTexture类型对象、TemporaryRT的nameID（我们使用的就是nameID，即dirShadowAtlasId）
+2. RenderBufferLoadAction loadAction:此枚举描述**在RT激活（加载）时应对其执行的操作**。也就是当GPU开始渲染到该RT时，应对RT中现有内容执行的操作。其枚举值有三个：1，**Load**，保留其现有内容（对于Tile Based的GPU，其成本高昂，应尽量避免）；2，**Clear**，清除其内容；3，**DontCare**，不考虑该RT的现有内容（在Tile Based的GPU上意味着不需要将RenderBuffer内容加载到区块内存中，从而实现性能提升）。
+3. Rendering.RenderBufferStoreAction storeAction:此枚举值描述**在GPU渲染到RT后应对其执行的操作**。其枚举值有4个：1，**Store**，需要存储到RAM中的RenderBuffer内容；2，**Resolve**，MSAA相关，先不深入了解；3，**StoreAndResolve**，同2；4，**DontCare**，**不再需要RenderBuffer内容，（在该RT不再作为RenderTarget时）可以直接丢弃**（Tile Base的GPU不会将该RT写出到RAM，从而提供性能提升）。
+
+**RenderBufferLoadAction和RenderBufferStorAction**非常重要，尤其是对于移动端的大多GPU（Tile Based）。其具体食用用法可以参考[《UWA社区的一篇讨论》](https://answer.uwa4d.com/question/5e856425acb49302349a1119)。
+
+我对**RenderTexture与RenderTarget的工作流**的猜测如下：
+
+1. CommandBuffer.GetTemporaryRT会在**显存**上申请一张RT的内存。
+2. CommandBuffer.SetRenderTargetRT会将显存上的RT加载到GPU中一块空间非常小的渲染时使用的**高速缓存**中，高速缓存我感觉是类似于**OnChip**（具体文章可参考这篇[《移动端gpu架构中的onchip memory具体是如何运作的？》](https://www.zhihu.com/question/499462755)）这样的东西。
+3. 如果loadAction为Clear，在将RT加载到高速缓存后会先对其清除；如果为DontCare则不进行任何预处理。
+4. 在我们对这块高速缓存中的RT执行完**所有对它的渲染指令之后**（即下一个RT要使用这块高速缓存了），我们通常会有两种处理方式：1，Store，将其写会到RAM，意味着我们之后还能用它；2，DontCare，直接丢弃这张**高速缓存中的RT**，意味着我们之后就访问不到这张RT了，我想最不容易理解的就是这里的DontCare，因为我们通常会认为我们既然要渲染它，我们之后怎么可能用不到它呢，打个比方吧，我们在渲染完这张RT后，将其Blit到另一张RT上后，可能我们就用不到这张RT了，因为其信息已经在另一张RT上了。
+
+**这些在GPU高速缓存和显存上的加载、存储操作会影响GPU带宽**，因此其概念非常重要（我们也要尽量减少RenderTarget的切换，以此来减少GPU带宽）。
+
+最后，我们会**在完成阴影的一切工作后立刻**手动释放ShadowAtlas这张RT，其具体使用代码如下。
+
+```c#
+    //完成因ShadowAtlas所有工作后，释放ShadowAtlas RT
+    public void Cleanup()
+    {
+        buffer.ReleaseTemporaryRT(dirShadowAtlasId);
+        ExecuteBuffer();
+    }
+```
+
+最后给出这节的部分关键代码。
+
+```c#
+    //方向光源Shadow Atlas的标识
+    private static int dirShadowAtlasId = Shader.PropertyToID("_DirectionalShadowAtlas");
+
+    ...
+
+    //渲染阴影贴图
+    public void Render()
+    {
+        if (ShadowedDirectionalLightCount > 0)
+        {
+            RenderDirectionalShadows();
+        }
+        else
+        {
+            //如果因为某种原因不需要渲染阴影，我们也需要生成一张1x1大小的ShadowAtlas
+            //因为WebGL 2.0下如果某个材质包含ShadowMap但在加载时丢失了ShadowMap会报错
+            buffer.GetTemporaryRT(dirShadowAtlasId, 1, 1, 32, FilterMode.Bilinear, RenderTextureFormat.Shadowmap);
+        }
+    }
+
+    //渲染方向光源的Shadow Map到ShadowAtlas上
+    void RenderDirectionalShadows()
+    {
+        //Shadow Atlas阴影图集的尺寸，默认为1024
+        int atlasSize = (int)settings.directional.atlasSize;
+        //使用CommandBuffer.GetTemporaryRT来申请一张RT用于Shadow Atlas，注意我们每帧自己管理其释放
+        //第一个参数为该RT的标识，第二个参数为RT的宽，第三个参数为RT的高
+        //第四个参数为depthBuffer的位宽，第五个参数为过滤模式，第六个参数为RT格式
+        //我们使用32bits的Float位宽，URP使用的是16bits
+        buffer.GetTemporaryRT(dirShadowAtlasId, atlasSize, atlasSize,
+            32, FilterMode.Bilinear, RenderTextureFormat.Shadowmap);
+        //告诉GPU接下来操作的RT是ShadowAtlas
+        //RenderBufferLoadAction.DontCare意味着在将其设置为RenderTarget之后，我们不关心它的初始状态，不对其进行任何预处理
+        //RenderBufferStoreAction.Store意味着完成这张RT上的所有渲染指令之后（要切换为下一个RenderTarget时），我们会将其存储到显存中为后续采样使用
+        buffer.SetRenderTarget(dirShadowAtlasId, RenderBufferLoadAction.DontCare, RenderBufferStoreAction.Store);
+        //清理ShadowAtlas的DepthBuffer（我们的ShadowAtlas也只有32bits的DepthBuffer）,第一次参数true表示清除DepthBuffer，第二个false表示不清除ColorBuffer
+        buffer.ClearRenderTarget(true, false, Color.clear);
+        ExecuteBuffer();
+    }
+
+    //完成因ShadowAtlas所有工作后，释放ShadowAtlas RT
+    public void Cleanup()
+    {
+        buffer.ReleaseTemporaryRT(dirShadowAtlasId);
+        ExecuteBuffer();
+    }
+```
+
+目前为止，虽然我们的摄像机画面会变黑，但我们使用Frame Debugger可以看到目前我们会在渲染物体前先申请一张ShadowAtlas的RT，然后对其执行清除Depth+Stencil的预处理操作。并且，我们可以在Frame Debugger上看到该RT的加载、存储模式。
+
+<div align=center>
+
+![20230126233008](https://raw.githubusercontent.com/recaeee/PicGo/main/20230126233008.png)
+
+</div>
+
+好啦~到现在为止，我们已经了解对于一个RT的申请、管理、释放操作了，这些操作非常有用，不只是阴影贴图，很多地方我们都需要进行这些操作，因此是非常重要的知识点。
+
+#### 1.6 先渲染阴影贴图 Shadows First
+
+<div align=center>
+
+![20230126233431](https://raw.githubusercontent.com/recaeee/PicGo/main/20230126233431.png)
+
+</div>
 
 #### 参考
 
 1. https://www.bilibili.com/video/BV1X7411F744/?spm_id_from=333.999.0.0
 2. https://docs.unity3d.com/cn/2021.3/Manual/shadow-mapping.html
 3. https://docs.unity3d.com/cn/2021.3/Manual/shadow-distance.html
+4. https://answer.uwa4d.com/question/5e856425acb49302349a1119

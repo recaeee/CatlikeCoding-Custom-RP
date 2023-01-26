@@ -41,8 +41,10 @@ public class Lighting
         buffer.BeginSample(bufferName);
         //渲染阴影相关
         shadows.Setup(context, cullingResults, shadowSettings);
-        //传递cullingResults下的有效光源
+        //传递cullingResults下的有效光源给GPU
         SetupLights();
+        //渲染阴影贴图
+        shadows.Render();
         buffer.EndSample(bufferName);
         //再次提醒这里只是提交CommandBuffer到Context的指令队列中，只有等到context.Submit()才会真正依次执行指令
         context.ExecuteCommandBuffer(buffer);
@@ -87,5 +89,12 @@ public class Lighting
         buffer.SetGlobalInt(dirLightCountId, visibleLights.Length);
         buffer.SetGlobalVectorArray(dirLightColorsId, dirLightColors);
         buffer.SetGlobalVectorArray(dirLightDirectionsId, dirLightDirections);
+    }
+
+    //完成光源的所有工作后释放其相关内存
+    public void Cleanup()
+    {
+        //释放ShadowAtlas内存
+        shadows.Cleanup();
     }
 }

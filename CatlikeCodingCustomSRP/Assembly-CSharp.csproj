@@ -46,10 +46,10 @@
      <Compile Include="Assets\Custom RP\Examples\MeshBall.cs" />
      <Compile Include="Assets\Custom RP\Examples\PerObjectMaterialProperties.cs" />
      <Compile Include="Assets\Custom RP\Runtime\Lighting.cs" />
-     <Compile Include="Assets\Custom RP\Runtime\CameraRenderer.Editor.cs" />
-     <Compile Include="Assets\Custom RP\Runtime\CustomRenderPipelineAsset.cs" />
      <Compile Include="Assets\Custom RP\Runtime\ShadowSettings.cs" />
      <Compile Include="Assets\Custom RP\Runtime\Shadows.cs" />
+     <Compile Include="Assets\Custom RP\Runtime\CameraRenderer.Editor.cs" />
+     <Compile Include="Assets\Custom RP\Runtime\CustomRenderPipelineAsset.cs" />
      <None Include="Assets\Custom RP\ShaderLibrary\Light.hlsl" />
      <None Include="Assets\Custom RP\Shaders\Lit.shader" />
      <None Include="Assets\Custom RP\ShaderLibrary\Common.hlsl" />
