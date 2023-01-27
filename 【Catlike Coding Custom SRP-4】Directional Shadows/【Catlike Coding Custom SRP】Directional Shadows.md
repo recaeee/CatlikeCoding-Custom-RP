@@ -347,6 +347,104 @@ CommandBuffer.SetRenderTarget的作用是**添加“设置活动的渲染目标�
 
 </div>
 
+我们需要**在渲染实际摄像机画面之前渲染阴影贴图**，因此我们要先将ShadowAtlas设置为Render Target，渲染阴影贴图，再将摄像机画面设置为Render Target，渲染实际画面。因此在CameraRenderer.Render中调整摄像机Setup的位置。
+
+```c#
+        //将光源信息传递给GPU，在其中也会完成阴影贴图的渲染
+        lighting.Setup(context, cullingResults, shadowSettings);
+        //设置当前摄像机Render Target，准备渲染摄像机画面
+        Setup();
+```
+
+现在我们能正常渲染出画面了，打开FrameDebugger截帧观察渲染过程，可以看到在MainCamera相关渲染操作之前，会先进行Shadows的相关操作。
+
+<div align=center>
+
+![20230127142002](https://raw.githubusercontent.com/recaeee/PicGo/main/20230127142002.png)
+
+</div>
+
+我们希望在Frame Debugger中让Shadows标签被Main Camera标签囊括。
+
+```c#
+        //在Frame Debugger中将Shadows buffer下的操作囊括到Camera标签下
+        buffer.BeginSample(SampleName);
+        ExecuteBuffer();
+        //将光源信息传递给GPU，在其中也会完成阴影贴图的渲染
+        lighting.Setup(context, cullingResults, shadowSettings);
+        buffer.EndSample(SampleName);
+```
+
+<div align=center>
+
+![20230127142526](https://raw.githubusercontent.com/recaeee/PicGo/main/20230127142526.png)
+
+</div>
+
+#### 1.7 渲染阴影贴图 Rendering
+
+为了渲染阴影贴图，我们先**根据cullingResults和光源索引来构建一个shadowDrawingSettings**。
+
+ShadowDrawingSettings用来描述**使用哪种splitData渲染哪个阴影光源**。splitData为给定阴影级联等级的剔除信息，目前我们还不需要深入splitData。
+
+接下来调用**cullingResults.ComputeDirectionalShadowMatricesAndCullingPrimitives**来计算当前方向光源渲染阴影贴图用的VP矩阵，然后通过buffer.SetViewProjectionMatrices来配置当前使用的VP矩阵，最后调用context.DrawShadows来渲染阴影贴图。
+
+我们先来看下实际代码。
+
+```c#
+    /// <summary>
+    /// 渲染单个光源的阴影贴图到ShadowAtlas上
+    /// </summary>
+    /// <param name="index">光源的索引</param>
+    /// <param name="tileSize">该光源在ShadowAtlas上分配的Tile块大小</param>
+    void RenderDirectionalShadows(int index, int tileSize)
+    {
+        //获取当前要配置光源的信息
+        ShadowedDirectionalLight light = ShadowedDirectionalLights[index];
+        //根据cullingResults和当前光源的索引来构造一个ShadowDrawingSettings
+        var shadowSettings = new ShadowDrawingSettings(cullingResults, light.visibleLightIndex);
+        //使用Unity提供的接口来为方向光源计算出其渲染阴影贴图用的VP矩阵和splitData
+        cullingResults.ComputeDirectionalShadowMatricesAndCullingPrimitives(light.visibleLightIndex,
+            0, 1, Vector3.zero,
+            tileSize, 0f,
+            out Matrix4x4 viewMatrix, out Matrix4x4 projectionMatrix, out ShadowSplitData splitData);
+        //splitData包括投射阴影物体应该如何被裁剪的信息，我们需要把它传递给shadowSettings
+        shadowSettings.splitData = splitData;
+        //将当前VP矩阵设置为计算出的VP矩阵，准备渲染阴影贴图
+        buffer.SetViewProjectionMatrices(viewMatrix, projectionMatrix);
+        ExecuteBuffer();
+        //使用context.DrawShadows来渲染阴影贴图，其需要传入一个shadowSettings
+        context.DrawShadows(ref shadowSettings);
+    }
+```
+
+接下来，我们详细分析下**cullingResults.ComputeDirectionalShadowMatricesAndCullingPrimitives**方法。
+
+根据官方文档，该函数的作用是**计算方向光的视图和投影矩阵以及阴影分割数据**。
+
+接下来看下其传入参数：
+1. int activeLightIndex:**当前要计算的光源索引**。
+2. int splitIndex:级联索引，阴影级联相关，暂时不深入。
+3. int splitCount:级联的数量，阴影级联相关，暂时不深入。
+4. Vector3 splitRatio:级联比率，阴影级联相关，暂时不深入。
+5. int shadowResolution:**阴影贴图（tile）的分辨率**。
+6. float shadowNearPlaneOffset:光源的近平面偏移。
+7. **out** Matrix4x4 viewMatrix:**计算出的视图矩阵**。
+8. **out** Matrix4x4 projMatrix:**计算出的投影矩阵**。
+9. **out** Rendering.ShadowSplitData:计算的级联数据，阴影级联相关，暂时不深入。
+
+我们需要知道，**方向光源是没有位置数据的**（被定义为无限远），因此，我们通过VP矩阵构造一个立方体裁剪空间，将所有要投射阴影的物体通过该VP矩阵变换到该裁剪空间中，然后根据深度信息渲染阴影贴图。
+
+最后，我们通过**context.DrawShadows**来渲染阴影贴图。
+
+context.DrawShadows的作用是为**单个光源调度阴影投射物的绘制**，其传入一个ShadowDrawingSettings，该settings指定了要绘制哪组阴影投射物（级联相关）以及绘制方式。
+
+由此，我们就基本上完成了渲染阴影贴图所用的cpu端发送的一系列渲染指令。
+
+#### 1.8 阴影投射通道 Shadow Caster Pass
+
+虽然我们目前已经每帧告诉GPU去渲染阴影贴图，但我们通过Frame Debugger可以看到在Shadows标签下我们没有渲染任何物体，这是因为**context.DrawShadows只渲染包含ShadowCaster Pass的材质**。
+
 #### 参考
 
 1. https://www.bilibili.com/video/BV1X7411F744/?spm_id_from=333.999.0.0

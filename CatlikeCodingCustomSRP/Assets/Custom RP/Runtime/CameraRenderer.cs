@@ -43,10 +43,14 @@ public partial class CameraRenderer
         {
             return;
         }
-        
-        Setup();
-        //将光源信息传递给GPU
+        //在Frame Debugger中将Shadows buffer下的操作囊括到Camera标签下
+        buffer.BeginSample(SampleName);
+        ExecuteBuffer();
+        //将光源信息传递给GPU，在其中也会完成阴影贴图的渲染
         lighting.Setup(context, cullingResults, shadowSettings);
+        buffer.EndSample(SampleName);
+        //设置当前摄像机Render Target，准备渲染摄像机画面
+        Setup();
         DrawVisibleGeometry(useDynamicBatching, useGPUInstancing);
         DrawUnsupportedShaders();
         DrawGizmos();
