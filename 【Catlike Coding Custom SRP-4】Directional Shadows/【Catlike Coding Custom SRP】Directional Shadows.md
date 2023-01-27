@@ -443,7 +443,246 @@ context.DrawShadows的作用是为**单个光源调度阴影投射物的绘制**
 
 #### 1.8 阴影投射通道 Shadow Caster Pass
 
-虽然我们目前已经每帧告诉GPU去渲染阴影贴图，但我们通过Frame Debugger可以看到在Shadows标签下我们没有渲染任何物体，这是因为**context.DrawShadows只渲染包含ShadowCaster Pass的材质**。
+虽然我们目前已经每帧告诉GPU去渲染阴影贴图，但我们通过Frame Debugger可以看到在Shadows标签下我们没有渲染任何物体，这是因为**context.DrawShadows只渲染包含ShadowCaster Pass的材质**。因此我们需要在Lit.Shader中增加一个ShadowCaster Pass。**该Pass的"LightMode" = "ShadowCaster"**,ShadowCaster通道用于将对象渲染到阴影贴图中。
+
+新增Pass具体代码如下。
+
+```c#
+        //渲染阴影的Pass
+        Pass
+        {
+            //阴影Pass的LightMode为ShadowCaster
+            Tags
+            {
+                "LightMode" = "ShadowCaster"
+            }
+            //因为只需要写入深度，关闭对颜色通道的写入
+            ColorMask 0
+
+            HLSLPROGRAM
+            //支持的最低平台
+            #pragma target 3.5
+            //支持Alpha Test的裁剪
+            #pragma shader_feature _CLIPPING
+            //定义diffuse项是否使用Premultiplied alpha的关键字
+            #pragma multi_compile_instancing
+            #pragma vertex ShadowCasterPassVertex
+            #pragma fragment ShadowCasterPassFragment
+            //阴影相关方法写在ShadowCasterPass.hlsl
+            #include "ShadowCasterPass.hlsl"
+            ENDHLSL
+        }
+```
+
+ShadowCasterPass.hlsl代码如下。
+
+```c#
+#ifndef CUSTOM_SHADOW_CASTER_PASS_INCLUDED
+#define CUSTOM_SHADOW_CASTER_PASS_INCLUDED
+
+#include "../ShaderLibrary/Common.hlsl"
+
+//获取BaseMap用于Clip
+TEXTURE2D(_BaseMap);
+SAMPLER(sampler_BaseMap);
+
+//为了使用GPU Instancing，每实例数据要构建成数组,使用UNITY_INSTANCING_BUFFER_START(END)来包裹每实例数据
+UNITY_INSTANCING_BUFFER_START(UnityPerMaterial)
+    //纹理坐标的偏移和缩放可以是每实例数据
+    UNITY_DEFINE_INSTANCED_PROP(float4,_BaseMap_ST)
+    //_BaseColor在数组中的定义格式
+    UNITY_DEFINE_INSTANCED_PROP(float4,_BaseColor)
+    //透明度测试阈值
+    UNITY_DEFINE_INSTANCED_PROP(float,_Cutoff)
+UNITY_INSTANCING_BUFFER_END(UnityPerMaterial)
+
+//使用结构体定义顶点着色器的输入，一个是为了代码更整洁，一个是为了支持GPU Instancing（获取object的index）
+struct Attributes
+{
+    float3 positionOS:POSITION;
+    float2 baseUV:TEXCOORD0;
+    //定义GPU Instancing使用的每个实例的ID，告诉GPU当前绘制的是哪个Object
+    UNITY_VERTEX_INPUT_INSTANCE_ID
+};
+
+//为了在片元着色器中获取实例ID，给顶点着色器的输出（即片元着色器的输入）也定义一个结构体
+//命名为Varings是因为它包含的数据可以在同一三角形的片段之间变化
+struct Varyings
+{
+    float4 positionCS:SV_POSITION;
+    float2 baseUV:VAR_BASE_UV;
+    //定义每一个片元对应的object的唯一ID
+    UNITY_VERTEX_INPUT_INSTANCE_ID
+};
+
+Varyings ShadowCasterPassVertex(Attributes input)
+{
+    Varyings output;
+    //从input中提取实例的ID并将其存储在其他实例化宏所依赖的全局静态变量中
+    UNITY_SETUP_INSTANCE_ID(input);
+    //将实例ID传递给output
+    UNITY_TRANSFER_INSTANCE_ID(input,output);
+    float3 positionWS = TransformObjectToWorld(input.positionOS);
+    output.positionCS = TransformWorldToHClip(positionWS);
+    //应用纹理ST变换
+    float4 baseST = UNITY_ACCESS_INSTANCED_PROP(UnityPerMaterial,_BaseMap_ST);
+    output.baseUV = input.baseUV * baseST.xy + baseST.zw;
+    return output;
+}
+
+void ShadowCasterPassFragment(Varyings input)
+{
+    //从input中提取实例的ID并将其存储在其他实例化宏所依赖的全局静态变量中
+    UNITY_SETUP_INSTANCE_ID(input);
+    //获取采样纹理颜色
+    float4 baseMap = SAMPLE_TEXTURE2D(_BaseMap,sampler_BaseMap,input.baseUV);
+    //通过UNITY_ACCESS_INSTANCED_PROP获取每实例数据
+    float4 baseColor =  UNITY_ACCESS_INSTANCED_PROP(UnityPerMaterial, _BaseColor);
+    float4 base = baseMap * baseColor;
+
+    //只有在_CLIPPING关键字启用时编译该段代码
+    #if defined(_CLIPPING)
+    //clip函数的传入参数如果<=0则会丢弃该片元
+    clip(base.a - UNITY_ACCESS_INSTANCED_PROP(UnityPerMaterial, _Cutoff));
+    #endif
+    //到这里就结束了，我们不需要返回任何值，其片元深度会写入阴影贴图的DepthBuffer
+}
+
+#endif
+```
+
+**ShadowCaster Pass的顶点着色器和片元着色器都非常简单**，我们只需要传递顶点在裁剪空间下的坐标，插值成片元，Clip裁剪掉Alpha Test不通过的片元，最后记录其深度信息到ShadowAtlas的DepthBuffer中就行了，在片元着色器中我们不需要返回值，其深度会自动记录。
+
+此时，我们默认的maxDistance为100，我们打开Frame Debugger可以看到阴影贴图的渲染。
+
+<div align=center>
+
+![20230127202452](https://raw.githubusercontent.com/recaeee/PicGo/main/20230127202452.png)
+
+</div>
+
+此时，我们阴影贴图的利用率十分低，只有一小块用上了，此时我们降低maxDistance，会使Main Camera上用于阴影渲染的视锥体的远平面拉近，虽然包括的物体可能不变，但会减少视锥体空余的部分。此时，渲染阴影贴图用的立方体裁剪空间自然也就变小，阴影贴图利用率就变大了，以下为maxDistance为15的情况。
+
+<div align=center>
+
+![20230127202941](https://raw.githubusercontent.com/recaeee/PicGo/main/20230127202941.png)
+
+</div>
+
+再提醒一次，渲染结果是正交模式的，因为渲染的是方向光源的阴影。
+
+#### 1.9 支持更多光源 Multiple Lights
+
+我们将支持阴影的方向光源最大数量设置为4，因此当我们实际有4个方向光源需要渲染阴影时，我们需要将ShadowAltas分为4个Tile，每个光源将其阴影贴图渲染到一个Tile上（**这时就体现了ShadowAtlas图集的概念**）。分块的逻辑就不说了，计算出偏移很简单，唯一比较重要的就是我们通过**buffer.SetViewport**来实际告诉GPU渲染到RenderTarget上的哪一块区域。
+
+首先看下实际应用的部分关键代码。
+
+```c#
+    //支持阴影的方向光源最大数（注意这里，我们可以有多个方向光源，但支持的阴影的最多只有4个）
+    private const int maxShadowedDirectionalLightCount = 4;
+    
+    ...
+
+    /// <summary>
+    /// 设置当前要渲染的Tile区域
+    /// </summary>
+    /// <param name="index">Tile索引</param>
+    /// <param name="split">Tile一个方向上的总数</param>
+    /// <param name="tileSize">一个Tile的宽度（高度）</param>
+    void SetTileViewport(int index, int split, float tileSize)
+    {
+        Vector2 offset = new Vector2(index % split, index / split);
+        buffer.SetViewport(new Rect(offset.x * tileSize, offset.y * tileSize,tileSize,tileSize));
+    }
+
+```
+
+我们来详细分析下**buffer.SetViewport**方法。
+
+CommandBuffer.SetViewport的作用是**添加用于渲染视口的命令**。默认情况下，在Render Target更改后，视口将设置为整个Render Target。**此命令可用于将未来的渲染限制为指定的像素矩阵**，其传入参数为Rect pixelRect:视口矩形（像素坐标）。
+
+由此，我们放置4个支持阴影的方向光源得到的ShadowAtlas如下图所示。
+
+<div align=center>
+
+![20230127211722](https://raw.githubusercontent.com/recaeee/PicGo/main/20230127211722.png)
+
+</div>
+
+#### 2 采样阴影贴图 Sampling Shadows
+
+<div align=center>
+
+![20230127205507](https://raw.githubusercontent.com/recaeee/PicGo/main/20230127205507.png)
+
+</div>
+
+目前我们已经能成功渲染出阴影贴图，接下来就是需要在光照Pass里采样阴影贴图，来判断片元是否在阴影中了。
+
+#### 2.1 阴影矩阵 Shadow Matrices
+
+为了判断Lit中的片元是否在阴影中，我们首先**需要根据片元的世界坐标，将其转换成ShadowAtlas上的像素坐标**，采样，然后比较值。
+
+坐标转换的方法很简单，我们首先让片元的世界坐标左乘光源裁剪空间的VP矩阵，转换到光源裁剪空间，然后将其坐标从[-1,1]缩放到[0,1]，然后根据Tile偏移和缩放到对应光源的Tile上，就可以进行采样了。
+
+在这里给出关键代码。
+
+```c#
+    //方向光源Shadow Atlas、阴影变化矩阵数组的标识
+    private static int dirShadowAtlasId = Shader.PropertyToID("_DirectionalShadowAtlas"),
+        dirShadowMatricesId = Shader.PropertyToID("_DirectionalShadowMatrices");
+    //将世界坐标转换到阴影贴图上的像素坐标的变换矩阵
+    private static Matrix4x4[] dirShadowMatrices = new Matrix4x4[maxShadowedDirectionalLightCount];
+
+    ...
+
+    /// <summary>
+    /// 设置当前要渲染的Tile区域
+    /// </summary>
+    /// <param name="index">Tile索引</param>
+    /// <param name="split">Tile一个方向上的总数</param>
+    /// <param name="tileSize">一个Tile的宽度（高度）</param>
+    Vector2 SetTileViewport(int index, int split, float tileSize)
+    {
+        Vector2 offset = new Vector2(index % split, index / split);
+        buffer.SetViewport(new Rect(offset.x * tileSize, offset.y * tileSize,tileSize,tileSize));
+        return offset;
+    }
+
+        Matrix4x4 ConvertToAtlasMatrix(Matrix4x4 m, Vector2 offset, int split)
+    {
+        //如果使用反向Z缓冲区，为Z取反
+        if (SystemInfo.usesReversedZBuffer)
+        {
+            m.m20 = -m.m20;
+            m.m21 = -m.m21;
+            m.m22 = -m.m22;
+            m.m23 = -m.m23;
+        }
+        //光源裁剪空间坐标范围为[-1,1]，而纹理坐标和深度都是[0,1]，因此，我们将裁剪空间坐标转化到[0,1]内
+        //然后将[0,1]下的x,y偏移到光源对应的Tile上
+        float scale = 1f / split;
+        m.m00 = (0.5f * (m.m00 + m.m30) + offset.x * m.m30) * scale;
+        m.m01 = (0.5f * (m.m01 + m.m31) + offset.x * m.m31) * scale;
+        m.m02 = (0.5f * (m.m02 + m.m32) + offset.x * m.m32) * scale;
+        m.m03 = (0.5f * (m.m03 + m.m33) + offset.x * m.m33) * scale;
+        m.m10 = (0.5f * (m.m10 + m.m30) + offset.y * m.m30) * scale;
+        m.m11 = (0.5f * (m.m11 + m.m31) + offset.y * m.m31) * scale;
+        m.m12 = (0.5f * (m.m12 + m.m32) + offset.y * m.m32) * scale;
+        m.m13 = (0.5f * (m.m13 + m.m33) + offset.y * m.m33) * scale;
+        m.m20 = 0.5f * (m.m20 + m.m30);
+        m.m21 = 0.5f * (m.m21 + m.m31);
+        m.m22 = 0.5f * (m.m22 + m.m32);
+        m.m23 = 0.5f * (m.m23 + m.m33);
+        return m;
+    }
+```
+
+其中，我们会考虑到有些图形API会采用**反向深度缓冲**（为了充分利用深度精度），因此我们判断这种情况并进行矫正。另外采用多行乘法和加法的原因是避免矩阵操作带来的无效运算。
+
+#### 2.2 存储每个光源的阴影数据 Storing Shadow Data Per Light
+
+
 
 #### 参考
 

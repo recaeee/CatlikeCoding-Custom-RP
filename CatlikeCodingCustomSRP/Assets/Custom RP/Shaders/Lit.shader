@@ -19,7 +19,7 @@ Shader "Custom RP/Lit"
         _Smoothness("Smoothness",Range(0,1)) = 0.5
         //Premultiply Alpha的关键字
         [Toggle(_PREMULTIPLY_ALPHA)]_PremulAlpha("Premultiply Alpha",Float) = 0
-        
+
         //混合模式使用的值，其值应该是枚举值，但是这里使用float
         //特性用于在Editor下更方便编辑
         [Enum(UnityEngine.Rendering.BlendMode)]_SrcBlend("Src Blend",Float) = 1
@@ -55,8 +55,33 @@ Shader "Custom RP/Lit"
             #include "LitPass.hlsl"
             ENDHLSL
         }
+
+        //渲染阴影的Pass
+        Pass
+        {
+            //阴影Pass的LightMode为ShadowCaster
+            Tags
+            {
+                "LightMode" = "ShadowCaster"
+            }
+            //因为只需要写入深度，关闭对颜色通道的写入
+            ColorMask 0
+
+            HLSLPROGRAM
+            //支持的最低平台
+            #pragma target 3.5
+            //支持Alpha Test的裁剪
+            #pragma shader_feature _CLIPPING
+            //定义diffuse项是否使用Premultiplied alpha的关键字
+            #pragma multi_compile_instancing
+            #pragma vertex ShadowCasterPassVertex
+            #pragma fragment ShadowCasterPassFragment
+            //阴影相关方法写在ShadowCasterPass.hlsl
+            #include "ShadowCasterPass.hlsl"
+            ENDHLSL
+        }
     }
-    
+
     //告诉Unity编辑器使用CustomShaderGUI类的一个实例来为使用Lit.shader的材质绘制Inspector窗口
     CustomEditor "CustomShaderGUI"
 }
