@@ -680,9 +680,56 @@ CommandBuffer.SetViewport的作用是**添加用于渲染视口的命令**。默
 
 其中，我们会考虑到有些图形API会采用**反向深度缓冲**（为了充分利用深度精度），因此我们判断这种情况并进行矫正。另外采用多行乘法和加法的原因是避免矩阵操作带来的无效运算。
 
+到了这一步，我们就实现了在CPU端将至多4个阴影变换矩阵传递给GPU（虽然在GPU端还没接收），这样，我们在GPU中就可以将片元的世界坐标通过这4个阴影变换矩阵转换到ShadowAtlas上每个Tile上的像素坐标。
+
 #### 2.2 存储每个光源的阴影数据 Storing Shadow Data Per Light
 
+我们虽然告诉了GPU如何对片元采样到每个shadow Tile，但我们没有告诉GPU**哪个光源对应哪个Tile的阴影变换矩阵**。因此，我们还需要在CPU端传递每个光源的阴影数据_DirectionalLightShadowData给GPU，其数据类型为**Vector2**，包含光源的**阴影强度**（0为不渲染阴影，以及其**Shadow Tile索引**（也可以认为是支持阴影的光源索引，默认值为0）。
 
+代码很简单，就是多传递个Vector2的数据给GPU，就不贴代码了~
+
+#### 2.3 阴影HLSL文件 Shadows HLSL File
+
+我们创建一个Shadows.hlsl文件，在其中我们会接收cpu端传来的阴影贴图和每个Shadow Tile的阴影变换矩阵，我们也会在其中实现采样阴影贴图。其代码如下所示。
+
+```c#
+//用来采样阴影贴图
+#ifndef CUSTOM_SHADOWS_INCLUDED
+#define CUSTOM_SHADOWS_INCLUDED
+
+//宏定义最大支持阴影的方向光源数，要与CPU端同步，为4
+#define MAX_SHADOWED_DIRECTIONAL_LIGHT_COUNT 4
+
+//接收CPU端传来的ShadowAtlas
+//使用TEXTURE2D_SHADOW来明确我们接收的是阴影贴图
+TEXTURE2D_SHADOW(_DirectionalShadowAtlas);
+//阴影贴图只有一种采样方式，因此我们显式定义一个阴影采样器状态（不需要依赖任何纹理），其名字为sampler_linear_clamp_compare(使用宏定义它为SHADOW_SAMPLER)
+//由此，对于任何阴影贴图，我们都可以使用SHADOW_SAMPLER这个采样器状态
+//sampler_linear_clamp_compare这个取名十分有讲究，Unity会将这个名字翻译成使用Linear过滤、Clamp包裹的用于深度比较的采样器
+#define SHADOW_SAMPLER sampler_linear_clamp_compare
+SAMPLER_CMP(SHADOW_SAMPLER);
+
+//接收CPU端传来的每个Shadow Tile的阴影变换矩阵
+CBUFFER_START(_CustonShadows)
+    float4x4 _DirectionalShadowMatrices[MAX_SHADOWED_DIRECTIONAL_LIGHT_COUNT];
+CBUFFER_END
+
+#endif
+
+```
+
+在其中，我们通过宏定义了一个SAMLLER_CMP，对于任何阴影贴图，我们都可以使用这一个采样器状态来进行采样。参考[知乎文章《Unity SRP搞事（四）影》](https://zhuanlan.zhihu.com/p/67749158)，**通常来说，纹理和其采样器是成对出现的**，即一个纹理对应一个采样器。但是，因为对于任何阴影贴图，只有一种采样方法，因此我们只需要定义唯一一个SAMPLER_CMP。
+
+**SAMPLER_CMP**是一个特殊的采样器，我们可以通过与其匹配的SampleCmp函数来采样深度图。参考[《微软官方文档：SampleCmp》](https://learn.microsoft.com/en-us/windows/win32/direct3dhlsl/dx-graphics-hlsl-to-samplecmp)，该函数将采样**一块文素区域**（不是仅仅一个纹素），对于每个纹素，将其采样出来的深度值与给定比较值进行比较，返回0或者1。最后**将这些纹素的每个0或1结果通过纹理过滤模式混合在一起**（不是平均值这么简单的混合），最后将**一个[0,1]的float类型混合结果**返回给着色器。这个深度比较结果，相比只采样一个纹素效果更好。
+
+注意，我们的**定义的比较采样器名称为sampler_linear_clamp_compare**，这个名称是具有实际意义的。参考[《Unity官方文档：内联采样器状态》](https://docs.unity3d.com/cn/current/Manual/SL-SamplerStates.html)，**Unity会识别采样器名称中的某些模式**，其对于直接在着色器中声明简单硬编码采样状态很有用。sampler_linear_clamp_compare意味着我们会创建一个采用**Linear过滤模式**、**Clamp纹理包裹模式**的**用于深度比较**的采样器。
+
+```c#
+#define SAMPLER(samplerName)                  SamplerState samplerName
+#define SAMPLER_CMP(samplerName)              SamplerComparisonState samplerName
+```
+
+根据宏定义可以看到，实际会定义一个SamplerComparisonState采样器状态，根据[《微软官方文档:SampleCmp》](https://learn.microsoft.com/en-us/windows/win32/direct3dhlsl/dx-graphics-hlsl-to-samplecmp)，
 
 #### 参考
 
@@ -690,3 +737,6 @@ CommandBuffer.SetViewport的作用是**添加用于渲染视口的命令**。默
 2. https://docs.unity3d.com/cn/2021.3/Manual/shadow-mapping.html
 3. https://docs.unity3d.com/cn/2021.3/Manual/shadow-distance.html
 4. https://answer.uwa4d.com/question/5e856425acb49302349a1119
+5. https://zhuanlan.zhihu.com/p/67749158
+6. https://learn.microsoft.com/en-us/windows/win32/direct3dhlsl/dx-graphics-hlsl-to-samplecmp
+7. https://docs.unity3d.com/cn/current/Manual/SL-SamplerStates.html

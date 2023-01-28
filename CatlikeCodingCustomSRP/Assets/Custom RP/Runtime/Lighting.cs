@@ -15,10 +15,12 @@ public class Lighting
     //改为传递Vector4数组+当前传递光源数
     private static int dirLightCountId = Shader.PropertyToID("_DirectionalLightCount"),
         dirLightColorsId = Shader.PropertyToID("_DirectionalLightColors"),
-        dirLightDirectionsId = Shader.PropertyToID("_DirectionalLightDirections");
+        dirLightDirectionsId = Shader.PropertyToID("_DirectionalLightDirections"),
+        dirLightShadowDataId = Shader.PropertyToID("_DirectionalLightShadowData");
 
     private static Vector4[] dirLightColors = new Vector4[maxDirLightCount],
-        dirLightDirections = new Vector4[maxDirLightCount];
+        dirLightDirections = new Vector4[maxDirLightCount],
+        dirLightShadowData = new Vector4[maxDirLightCount];
 
     private CommandBuffer buffer = new CommandBuffer()
     {
@@ -59,8 +61,8 @@ public class Lighting
         dirLightColors[index] = visibleLight.finalColor;
         //光源方向为光源localToWorldMatrix的第三列，这里也需要取反
         dirLightDirections[index] = -visibleLight.localToWorldMatrix.GetColumn(2);
-        //配置阴影管理类，让其配置好支持阴影的光源相关信息
-        shadows.ReserveDirectionalShadows(visibleLight.light, index);
+        //配置阴影管理类，让其配置好支持阴影的光源相关信息，并且返回当前光源的阴影数据
+        dirLightShadowData[index] = shadows.ReserveDirectionalShadows(visibleLight.light, index);
     }
 
     void SetupLights()
@@ -89,6 +91,8 @@ public class Lighting
         buffer.SetGlobalInt(dirLightCountId, visibleLights.Length);
         buffer.SetGlobalVectorArray(dirLightColorsId, dirLightColors);
         buffer.SetGlobalVectorArray(dirLightDirectionsId, dirLightDirections);
+        //传递每个光源的阴影数据（阴影强度、阴影光源索引）
+        buffer.SetGlobalVectorArray(dirLightShadowDataId, dirLightShadowData);
     }
 
     //完成光源的所有工作后释放其相关内存
