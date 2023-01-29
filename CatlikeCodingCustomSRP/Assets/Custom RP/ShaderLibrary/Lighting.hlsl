@@ -11,7 +11,8 @@
 //计算物体表面接收到的光能量
 float3 IncomingLight(Surface surface,Light light)
 {
-    return saturate(dot(surface.normal,light.direction)) * light.color;
+    //考虑了阴影带来的光源衰减
+    return saturate(dot(surface.normal,light.direction)) * light.attenuation * light.color;
 }
 
 //新增的GetLighting方法，传入surface和light，返回真正的光照计算结果，即物体表面最终反射出的RGB光能量
@@ -20,14 +21,14 @@ float3 GetLighting(Surface surface,BRDF brdf,Light light)
     return IncomingLight(surface,light) * DirectBRDF(surface,brdf,light);
 }
 
-//GetLighting返回光照结果，这个GetLighting只传入一个surface
-float3 GetLighting(Surface surface,BRDF brdf)
+//GetLighting返回光照结果，这个GetLighting只入一个surface、一个BRDF
+float3 GetLighting(Surface surfaceWS,BRDF brdf)
 {
     //使用循环，累积所有有效方向光源的光照计算结果
     float3 color = 0.0;
     for(int i=0;i<GetDirectionalLightCount();i++)
     {
-        color += GetLighting(surface,brdf,GetDirectionalLight(i));
+        color += GetLighting(surfaceWS,brdf,GetDirectionalLight(i,surfaceWS));
     }
     return color;
 }

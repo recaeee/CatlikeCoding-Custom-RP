@@ -19,4 +19,34 @@ CBUFFER_START(_CustonShadows)
     float4x4 _DirectionalShadowMatrices[MAX_SHADOWED_DIRECTIONAL_LIGHT_COUNT];
 CBUFFER_END
 
+//每个方向光源的的阴影信息（包括不支持阴影的光源，不支持，其阴影强度就是0）
+struct DirectionalShadowData
+{
+    float strength;
+    int tileIndex;
+};
+
+//采样ShadowAtlas，传入positionSTS（STS是Shadow Tile Space，即阴影贴图对应Tile像素空间下的片元坐标）
+float SampleDirectionalShadowAtlas(float3 positionSTS)
+{
+    //使用特定宏来采样阴影贴图
+    return SAMPLE_TEXTURE2D_SHADOW(_DirectionalShadowAtlas,SHADOW_SAMPLER,positionSTS);
+}
+
+//计算阴影衰减值，返回值[0,1]，0代表阴影衰减最大（片元完全在阴影中），1代表阴影衰减最少，片元完全被光照射。而[0,1]的中间值代表片元有一部分在阴影中
+float GetDirectionalShadowAttenuation(DirectionalShadowData data, Surface surfaceWS)
+{
+    //忽略不开启阴影和阴影强度为0的光源
+    if(data.strength <= 0.0)
+    {
+        return 1.0;
+    }
+    //根据对应Tile阴影变换矩阵和片元的世界坐标计算Tile上的像素坐标STS
+    float3 positionSTS = mul(_DirectionalShadowMatrices[data.tileIndex], float4(surfaceWS.position,1.0)).xyz;
+    //采样Tile得到阴影强度值
+    float shadow = SampleDirectionalShadowAtlas(positionSTS);
+    //考虑光源的阴影强度，strength为0，依然没有阴影
+    return lerp(1.0,shadow,data.strength);
+}
+
 #endif

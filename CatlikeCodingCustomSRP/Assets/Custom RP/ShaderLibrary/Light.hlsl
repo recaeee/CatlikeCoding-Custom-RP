@@ -22,6 +22,8 @@ struct Light
     float3 color;
     //光源方向：指向光源
     float3 direction;
+    //光源衰减
+    float attenuation;
 };
 
 int GetDirectionalLightCount()
@@ -29,14 +31,31 @@ int GetDirectionalLightCount()
     return _DirectionalLightCount;
 }
 
-//构造一个方向光源并返回，其颜色与方向取自常量缓冲区的数组中index下标处
-Light GetDirectionalLight(int index)
+//构造一个光源的ShadowData
+DirectionalShadowData GetDirectionalShadowData(int lightIndex)
+{
+    DirectionalShadowData data;
+    //阴影强度
+    data.strength = _DirectionalLightShadowData[lightIndex].x;
+    //Tile索引
+    data.tileIndex = _DirectionalLightShadowData[lightIndex].y;
+    return data;
+}
+
+//对于每个片元，构造一个方向光源并返回，其颜色与方向取自常量缓冲区的数组中index下标处
+Light GetDirectionalLight(int index, Surface surfaceWS)
 {
     Light light;
     //float4的rgb和xyz完全等效
     light.color = _DirectionalLightColors[index].rgb;
     light.direction = _DirectionalLightDirections[index].xyz;
+    //构造光源阴影信息
+    DirectionalShadowData shadowData = GetDirectionalShadowData(index);
+    //根据片元的强度
+    light.attenuation = GetDirectionalShadowAttenuation(shadowData, surfaceWS);
     return light;
 }
+
+
 
 #endif

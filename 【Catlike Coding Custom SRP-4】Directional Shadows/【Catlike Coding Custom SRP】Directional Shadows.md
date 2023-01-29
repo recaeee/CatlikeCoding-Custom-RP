@@ -720,16 +720,105 @@ CBUFFER_END
 
 在其中，我们通过宏定义了一个SAMLLER_CMP，对于任何阴影贴图，我们都可以使用这一个采样器状态来进行采样。参考[知乎文章《Unity SRP搞事（四）影》](https://zhuanlan.zhihu.com/p/67749158)，**通常来说，纹理和其采样器是成对出现的**，即一个纹理对应一个采样器。但是，因为对于任何阴影贴图，只有一种采样方法，因此我们只需要定义唯一一个SAMPLER_CMP。
 
-**SAMPLER_CMP**是一个特殊的采样器，我们可以通过与其匹配的SampleCmp函数来采样深度图。参考[《微软官方文档：SampleCmp》](https://learn.microsoft.com/en-us/windows/win32/direct3dhlsl/dx-graphics-hlsl-to-samplecmp)，该函数将采样**一块文素区域**（不是仅仅一个纹素），对于每个纹素，将其采样出来的深度值与给定比较值进行比较，返回0或者1。最后**将这些纹素的每个0或1结果通过纹理过滤模式混合在一起**（不是平均值这么简单的混合），最后将**一个[0,1]的float类型混合结果**返回给着色器。这个深度比较结果，相比只采样一个纹素效果更好。
-
-注意，我们的**定义的比较采样器名称为sampler_linear_clamp_compare**，这个名称是具有实际意义的。参考[《Unity官方文档：内联采样器状态》](https://docs.unity3d.com/cn/current/Manual/SL-SamplerStates.html)，**Unity会识别采样器名称中的某些模式**，其对于直接在着色器中声明简单硬编码采样状态很有用。sampler_linear_clamp_compare意味着我们会创建一个采用**Linear过滤模式**、**Clamp纹理包裹模式**的**用于深度比较**的采样器。
-
 ```c#
 #define SAMPLER(samplerName)                  SamplerState samplerName
 #define SAMPLER_CMP(samplerName)              SamplerComparisonState samplerName
 ```
 
-根据宏定义可以看到，实际会定义一个SamplerComparisonState采样器状态，根据[《微软官方文档:SampleCmp》](https://learn.microsoft.com/en-us/windows/win32/direct3dhlsl/dx-graphics-hlsl-to-samplecmp)，
+根据以上宏定义可以看到，SAMPLE_CMP实际会定义一个SamplerComparisonState采样器状态.
+
+**SAMPLER_CMP**是一个特殊的采样器，我们可以通过与其匹配的SampleCmp函数来采样深度图。参考[《微软官方文档：SampleCmp》](https://learn.microsoft.com/en-us/windows/win32/direct3dhlsl/dx-graphics-hlsl-to-samplecmp)，该函数将采样**一块纹素区域**（不是仅仅一个纹素），对于每个纹素，将其采样出来的深度值与给定比较值进行比较，返回0或者1。最后**将这些纹素的每个0或1结果通过纹理过滤模式混合在一起**（不是平均值这么简单的混合），最后将**一个[0,1]的float类型混合结果**返回给着色器。这个深度比较结果，相比只采样一个纹素效果更好。
+
+注意，我们的**定义的比较采样器名称为sampler_linear_clamp_compare**，这个名称是具有实际意义的。参考[《Unity官方文档：内联采样器状态》](https://docs.unity3d.com/cn/current/Manual/SL-SamplerStates.html)，**Unity会识别采样器名称中的某些模式**，其对于直接在着色器中声明简单硬编码采样状态很有用。sampler_linear_clamp_compare意味着我们会创建一个采用**Linear过滤模式**、**Clamp纹理包裹模式**的**用于深度比较**的采样器。
+
+#### 2.4 采样阴影
+
+在这一节，我们就需要实现采样阴影了。在采样阴影之前，我们需要先接收到CPU端发送过来的每个光源的**阴影强度**和**Tile索引**。此外，我们还需要得到片元的**世界坐标**用于转换到阴影贴图上的像素坐标。
+
+在接收完这些信息后，我们通过**SAMPLE_TEXTURE2D_SHADOW**来采样ShadowAtlas，其会返回[0,1]的值，也就是上一步SampleCmp函数得到的结果，该值反映了阴影的衰减度**ShadowAttenuation**,0意味着片元完全在阴影中，1意味着片元完全不在阴影中，而**中间值意味着片元有部分在阴影中**（上一节说过SampleCmp的原理）。
+
+Shadows.hlsl中关键代码如下。
+
+```c#
+//每个方向光源的的阴影信息（包括不支持阴影的光源，不支持，其阴影强度就是0）
+struct DirectionalShadowData
+{
+    float strength;
+    int tileIndex;
+};
+
+//采样ShadowAtlas，传入positionSTS（STS是Shadow Tile Space，即阴影贴图对应Tile像素空间下的片元坐标）
+float SampleDirectionalShadowAtlas(float3 positionSTS)
+{
+    //使用特定宏来采样阴影贴图
+    return SAMPLE_TEXTURE2D_SHADOW(_DirectionalShadowAtlas,SHADOW_SAMPLER,positionSTS);
+}
+
+//计算阴影衰减值，返回值[0,1]，0代表阴影衰减最大（片元完全在阴影中），1代表阴影衰减最少，片元完全被光照射。而[0,1]的中间值代表片元有一部分在阴影中
+float GetDirectionalShadowAttenuation(DirectionalShadowData data, Surface surfaceWS)
+{
+    //忽略不开启阴影和阴影强度为0的光源
+    if(data.strength <= 0.0)
+    {
+        return 1.0;
+    }
+    //根据对应Tile阴影变换矩阵和片元的世界坐标计算Tile上的像素坐标STS
+    float3 positionSTS = mul(_DirectionalShadowMatrices[data.tileIndex], float4(surfaceWS.position,1.0)).xyz;
+    //采样Tile得到阴影强度值
+    float shadow = SampleDirectionalShadowAtlas(positionSTS);
+    //考虑光源的阴影强度，strength为0，依然没有阴影
+    return lerp(1.0,shadow,data.strength);
+}
+```
+
+这里，注意我们在GetDirectionalShadowAttenuation方法中使用了**if分支语句**，普遍来说，**分支语句会大幅降低Shader的性能**，这是因为GPU的高度并行化导致的，其SIMD或SIMT的硬件架构决定了图元上的每个片元都需要根据其自己的数据执行相同的指令，这也就意味着，如果有一些片元走进了if的一个分支，那么另一些没走进if的片元也会跟着一起去执行分支里的指令（即使它们在空转，即不实际执行分支中的语句）。具体的GPU硬件原理可以参考[向往大佬的《深入GPU硬件架构及运行机制》](https://zhuanlan.zhihu.com/p/545056819)，即使没完全看懂这篇文章，也会收获到许多GPU知识，是一篇非常好的文章，强烈推荐~
+
+#### 2.5 光源衰减 Attenuating Light
+
+目前，我们已经知道了ShadowAttenuation（阴影衰减），因此我们就可以计算出**考虑阴影后，光源打在片元上的能量比例**Light Attenuation（光源衰减），根据定义显而易见，LightAttenuation就等于ShadowAttenuation。在这一节要明确，我们会**对每个片元去构造属于这个片元自身的光源Light结构体**，对于每个片元的Light，Light的color和direction通常相同，但是attenuation不同（即考虑阴影），而不是将Light作为Shader的Uniform变量（虽然CPU传进来少量关于光源的CBUFFER数据，但是依然会对每个片元去构造器自己的Light)。最后，我们让物体表面接收到的光能量乘以Light Attenuation就成功让物体表面根据阴影衰减度接收到不同的光能量，因此实现阴影的效果。
+
+这里给出Light.hlsl中的关键代码。
+
+```c#
+//构造一个光源的ShadowData
+DirectionalShadowData GetDirectionalShadowData(int lightIndex)
+{
+    DirectionalShadowData data;
+    //阴影强度
+    data.strength = _DirectionalLightShadowData[lightIndex].x;
+    //Tile索引
+    data.tileIndex = _DirectionalLightShadowData[lightIndex].y;
+    return data;
+}
+
+//对于每个片元，构造一个方向光源并返回，其颜色与方向取自常量缓冲区的数组中index下标处
+Light GetDirectionalLight(int index, Surface surfaceWS)
+{
+    Light light;
+    //float4的rgb和xyz完全等效
+    light.color = _DirectionalLightColors[index].rgb;
+    light.direction = _DirectionalLightDirections[index].xyz;
+    //构造光源阴影信息
+    DirectionalShadowData shadowData = GetDirectionalShadowData(index);
+    //根据片元的强度
+    light.attenuation = GetDirectionalShadowAttenuation(shadowData, surfaceWS);
+    return light;
+}
+```
+
+到此为止，我们就成功实现了初步的阴影效果，如下图所示。
+
+<div align=center>
+
+![20230129225657](https://raw.githubusercontent.com/recaeee/PicGo/main/20230129225657.png)
+
+</div>
+
+从效果图中可以看到，我们的阴影渲染有些问题。在本该没有阴影的物体表面产生了类似于摩尔纹一般的阴影花纹，以及还会存在一些潜在的问题（一个光源的阴影可能采样到别的光源的Tile上）。我们会在后续的小节解决这些问题。
+
+#### 3 级联阴影贴图 Cascaded Shadow Maps
+
+
 
 #### 参考
 
@@ -740,3 +829,4 @@ CBUFFER_END
 5. https://zhuanlan.zhihu.com/p/67749158
 6. https://learn.microsoft.com/en-us/windows/win32/direct3dhlsl/dx-graphics-hlsl-to-samplecmp
 7. https://docs.unity3d.com/cn/current/Manual/SL-SamplerStates.html
+8. https://zhuanlan.zhihu.com/p/545056819
