@@ -6,13 +6,17 @@ public class Shadows
 {
     private const string bufferName = "Shadows";
     //支持阴影的方向光源最大数（注意这里，我们可以有多个方向光源，但支持的阴影的最多只有4个）
-    private const int maxShadowedDirectionalLightCount = 4;
-    //方向光源Shadow Atlas、阴影变化矩阵数组的标识
+    private const int maxShadowedDirectionalLightCount = 4, maxCascades = 4;
+    //方向光源Shadow Atlas、阴影变化矩阵数组的标识、级联总数、单个级联的CullingSphere索引
     private static int dirShadowAtlasId = Shader.PropertyToID("_DirectionalShadowAtlas"),
-        dirShadowMatricesId = Shader.PropertyToID("_DirectionalShadowMatrices");
+        dirShadowMatricesId = Shader.PropertyToID("_DirectionalShadowMatrices"),
+        cascadeCountId = Shader.PropertyToID("_CascadeCount"),
+        cascadeCullingSpheresId = Shader.PropertyToID("_CascadeCullingSpheres");
     //将世界坐标转换到阴影贴图上的像素坐标的变换矩阵
-    private static Matrix4x4[] dirShadowMatrices = new Matrix4x4[maxShadowedDirectionalLightCount];
-
+    private static Matrix4x4[] dirShadowMatrices = new Matrix4x4[maxShadowedDirectionalLightCount * maxCascades];
+    //每个级联的Culling Shpere信息，xyz为球心坐标，w为半径
+    private static Vector4[] cascadeCullingShperes = new Vector4[maxCascades];
+    
     private CommandBuffer buffer = new CommandBuffer()
     {
         name = bufferName
@@ -55,7 +59,7 @@ public class Shadows
     }
 
     //每帧执行，用于为light配置shadow altas（shadowMap）上预留一片空间来渲染阴影贴图，同时存储一些其他必要信息
-    //返回每个光源的阴影强度和索引，传递给GPU存储到Light结构体
+    //返回每个光源的阴影强度和其第一个级联的索引，传递给GPU存储到Light结构体
     public Vector2 ReserveDirectionalShadows(Light light, int visibleLightIndex)
     {
         //配置光源数不超过最大值
@@ -68,7 +72,7 @@ public class Shadows
             {
                 visibleLightIndex = visibleLightIndex
             };
-            return new Vector2(light.shadowStrength, ShadowedDirectionalLightCount++);
+            return new Vector2(light.shadowStrength, settings.directional.cascadeCount * ShadowedDirectionalLightCount++);
         }
         return Vector2.zero;
     }
@@ -108,8 +112,9 @@ public class Shadows
         buffer.BeginSample(bufferName);
         ExecuteBuffer();
 
-        //给ShadowAtlas分Tile，大于1个光源时分成4个Tile
-        int split = ShadowedDirectionalLightCount <= 1 ? 1 : 2;
+        //给ShadowAtlas分Tile，每个级联图一个Tile
+        int tiles = ShadowedDirectionalLightCount * settings.directional.cascadeCount;
+        int split = tiles <= 1 ? 1 : tiles <= 4 ? 2 : 4;
         int tileSize = atlasSize / split;
 
         //为每个配置好的方向光源配置其ShadowAtlas上的Tile
@@ -135,22 +140,44 @@ public class Shadows
         ShadowedDirectionalLight light = ShadowedDirectionalLights[index];
         //根据cullingResults和当前光源的索引来构造一个ShadowDrawingSettings
         var shadowSettings = new ShadowDrawingSettings(cullingResults, light.visibleLightIndex);
-        //使用Unity提供的接口来为方向光源计算出其渲染阴影贴图用的VP矩阵和splitData
-        cullingResults.ComputeDirectionalShadowMatricesAndCullingPrimitives(light.visibleLightIndex,
-            0, 1, Vector3.zero,
-            tileSize, 0f,
-            out Matrix4x4 viewMatrix, out Matrix4x4 projectionMatrix, out ShadowSplitData splitData);
-        //splitData包括投射阴影物体应该如何被裁剪的信息，我们需要把它传递给shadowSettings
-        shadowSettings.splitData = splitData;
-        //设置当前要渲染的Tile区域
-        //设置阴影变换矩阵(世界空间到光源裁剪空间）
-        dirShadowMatrices[index] =
-            ConvertToAtlasMatrix(projectionMatrix * viewMatrix, SetTileViewport(index, split, tileSize), split);
-        //将当前VP矩阵设置为计算出的VP矩阵，准备渲染阴影贴图
-        buffer.SetViewProjectionMatrices(viewMatrix, projectionMatrix);
-        ExecuteBuffer();
-        //使用context.DrawShadows来渲染阴影贴图，其需要传入一个shadowSettings
-        context.DrawShadows(ref shadowSettings);
+        //当前配置的阴影级联数
+        int cascadeCount = settings.directional.cascadeCount;
+        //当前要渲染的第一个tile在ShadowAtlas中的索引
+        int tileOffset = index * cascadeCount;
+        //级联Ratios（控制渲染区域）
+        Vector3 ratios = settings.directional.CascadeRatios;
+        //渲染每个级联的阴影贴图
+        for (int i = 0; i < cascadeCount; i++)
+        {
+            //使用Unity提供的接口来为方向光源计算出其渲染阴影贴图用的VP矩阵和splitData
+            cullingResults.ComputeDirectionalShadowMatricesAndCullingPrimitives(light.visibleLightIndex,
+                i, cascadeCount, ratios,
+                tileSize, 0f,
+                out Matrix4x4 viewMatrix, out Matrix4x4 projectionMatrix, out ShadowSplitData splitData);
+            //splitData包括投射阴影物体应该如何被裁剪的信息，我们需要把它传递给shadowSettings
+            shadowSettings.splitData = splitData;
+            //只需要设置一次每个级联的Culling Spheres信息，因为其坐标为光源空间下，相对每个光源位置都一样
+            if (index == 0)
+            {
+                Vector4 cullingSphere = splitData.cullingSphere;
+                //在cpu端对小球半径平方，方便在shader中计算片元与Culling Sphere的距离
+                cullingSphere.w *= cullingSphere.w;
+                cascadeCullingShperes[i] = cullingSphere;
+            }
+            int tileIndex = tileOffset + i;
+            //设置当前要渲染的Tile区域
+            //设置阴影变换矩阵(世界空间到光源裁剪空间）
+            dirShadowMatrices[tileIndex] =
+                ConvertToAtlasMatrix(projectionMatrix * viewMatrix, SetTileViewport(tileIndex, split, tileSize), split);
+            //将级联信息传递给GPU
+            buffer.SetGlobalInt(cascadeCountId, settings.directional.cascadeCount);
+            buffer.SetGlobalVectorArray(cascadeCullingSpheresId, cascadeCullingShperes);
+            //将当前VP矩阵设置为计算出的VP矩阵，准备渲染阴影贴图
+            buffer.SetViewProjectionMatrices(viewMatrix, projectionMatrix);
+            ExecuteBuffer();
+            //使用context.DrawShadows来渲染阴影贴图，其需要传入一个shadowSettings
+            context.DrawShadows(ref shadowSettings);
+        }
     }
 
     /// <summary>

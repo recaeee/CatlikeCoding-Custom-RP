@@ -4,6 +4,8 @@
 
 //宏定义最大支持阴影的方向光源数，要与CPU端同步，为4
 #define MAX_SHADOWED_DIRECTIONAL_LIGHT_COUNT 4
+//宏定义最大级联数为4
+#define MAX_CASCADE_COUNT 4
 
 //接收CPU端传来的ShadowAtlas
 //使用TEXTURE2D_SHADOW来明确我们接收的是阴影贴图
@@ -14,9 +16,14 @@ TEXTURE2D_SHADOW(_DirectionalShadowAtlas);
 #define SHADOW_SAMPLER sampler_linear_clamp_compare
 SAMPLER_CMP(SHADOW_SAMPLER);
 
-//接收CPU端传来的每个Shadow Tile的阴影变换矩阵
-CBUFFER_START(_CustonShadows)
-    float4x4 _DirectionalShadowMatrices[MAX_SHADOWED_DIRECTIONAL_LIGHT_COUNT];
+//接收CPU端传来的级联信息、阴影变换举证
+CBUFFER_START(_CustomShadows)
+    //级联数
+    int _CascadeCount;
+    //最多4个级联球信息
+    float4 _CascadeCullingSpheres[MAX_CASCADE_COUNT];
+    //接收CPU端传来的每个Shadow Tile(级联）的阴影变换矩阵
+    float4x4 _DirectionalShadowMatrices[MAX_SHADOWED_DIRECTIONAL_LIGHT_COUNT * MAX_CASCADE_COUNT];
 CBUFFER_END
 
 //每个方向光源的的阴影信息（包括不支持阴影的光源，不支持，其阴影强度就是0）
@@ -47,6 +54,31 @@ float GetDirectionalShadowAttenuation(DirectionalShadowData data, Surface surfac
     float shadow = SampleDirectionalShadowAtlas(positionSTS);
     //考虑光源的阴影强度，strength为0，依然没有阴影
     return lerp(1.0,shadow,data.strength);
+}
+
+//定义每个片元（world space surface)的级联信息
+struct ShadowData
+{
+    //当前片元使用的级联索引
+    int cascadeIndex;
+};
+
+//计算给定片元将要使用的级联信息
+ShadowData GetShadowData(Surface surfaceWS)
+{
+    ShadowData data;
+    int i;
+    for(i=0;i<_CascadeCount;i++)
+    {
+        float4 sphere = _CascadeCullingSpheres[i];
+        float distanceSqr = DistanceSquared(surfaceWS.position,sphere.xyz);
+        if(distanceSqr < sphere.w)
+        {
+            break;
+        }
+    }
+    data.cascadeIndex = i;
+    return data;
 }
 
 #endif

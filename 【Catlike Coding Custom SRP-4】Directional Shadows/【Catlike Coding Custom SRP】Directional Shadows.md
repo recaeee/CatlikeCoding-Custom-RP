@@ -818,7 +818,136 @@ Light GetDirectionalLight(int index, Surface surfaceWS)
 
 #### 3 级联阴影贴图 Cascaded Shadow Maps
 
+参考[《Unity官方文档——阴影级联》](https://docs.unity3d.com/cn/2021.3/Manual/shadow-cascades.html)阴影级联Shadow Cascades是一项非常有效的技术来充分利用阴影贴图生成高质量的阴影效果，并且有效减少阴影锯齿，其在很多商业项目中都有所应用。**阴影级联是只针对方向光源的技术**，首先来说为什么需要阴影级联。
 
+由于方向光源在渲染阴影贴图时使用正交投影，因此其阴影贴图每个Texel覆盖的（世界空间下的）实际面积都是相同的。而游戏中的主摄像机往往是透视投影的，而透视投影会造成这样的现象：视锥体内，距离主摄像机近的区域最终会被更多像素覆盖，而远处则相反。但在采样阴影贴图时，近处远处的像素都会去采样相同精度的Texel，这样就导致近处的像素可能产生阴影锯齿，也就是导致了**摄像机像素与阴影贴图纹素实际覆盖面积不匹配**，如下图所示。
+
+<div align=center>
+
+![20230201222912](https://raw.githubusercontent.com/recaeee/PicGo/main/20230201222912.png)
+
+</div>
+
+因此，对于一个方向光源，我们对距离摄像机的近端区域（面积较小）和远端区域（面积较大）渲染两张相同尺寸的阴影贴图（级联区域Cascades），就会导致近端区域的阴影贴图精度高，远端的精度低，使采样时纹素与像素覆盖面积匹配。这就是阴影级联的大致工作原理，其示意图如下图所示。
+
+<div align=center>
+
+![20230201223536](https://raw.githubusercontent.com/recaeee/PicGo/main/20230201223536.png)
+
+</div>
+
+使用的级联越多，透视锯齿对阴影的影响就越小，增加级联数量会增加渲染开销，但**此开销仍然会低于使用整张高分辨率的阴影贴图**。
+
+#### 3.1 设置 Settings
+
+我们通过控制每次渲染阴影贴图时的maxShadowDistance来控制级联阴影渲染的区域。
+
+对于方向光源阴影信息，增加参数cascadeCount来控制其级联数量（Unity默认最多支持4个级联，因此cascadeCount最大值为4），同时定义每一级级联的覆盖范围。
+
+#### 3.2 渲染级联阴影图 Rendering Cascades
+
+因为最多支持4个带阴影的方向光源，每个方向光源最多有4个级联，因此ShadowAtlas最多会被分成16个Tile。Unity自带的ComputeDirectionalShadowMatricesAndCullingPrimitives方法本身就很方便地支持了我们绘制一个方向光源的所有级联图，因此在代码中，我们只需要完成对Shadow Atlas的切分工作，以及把级联相关的参数传入该方法。关键代码如下所示。
+
+```c#
+    /// <summary>
+    /// 渲染单个光源的阴影贴图到ShadowAtlas上
+    /// </summary>
+    /// <param name="index">光源的索引</param>
+    /// /// <param name="split">分块量（一个方向）</param>
+    /// <param name="tileSize">该光源在ShadowAtlas上分配的Tile块大小</param>
+    void RenderDirectionalShadows(int index, int split, int tileSize)
+    {
+        //获取当前要配置光源的信息
+        ShadowedDirectionalLight light = ShadowedDirectionalLights[index];
+        //根据cullingResults和当前光源的索引来构造一个ShadowDrawingSettings
+        var shadowSettings = new ShadowDrawingSettings(cullingResults, light.visibleLightIndex);
+        //当前配置的阴影级联数
+        int cascadeCount = settings.directional.cascadeCount;
+        //当前要渲染的第一个tile在ShadowAtlas中的索引
+        int tileOffset = index * cascadeCount;
+        //级联Ratios（控制渲染区域）
+        Vector3 ratios = settings.directional.CascadeRatios;
+        //渲染每个级联的阴影贴图
+        for (int i = 0; i < cascadeCount; i++)
+        {
+            //使用Unity提供的接口来为方向光源计算出其渲染阴影贴图用的VP矩阵和splitData
+            cullingResults.ComputeDirectionalShadowMatricesAndCullingPrimitives(light.visibleLightIndex,
+                i, cascadeCount, ratios,
+                tileSize, 0f,
+                out Matrix4x4 viewMatrix, out Matrix4x4 projectionMatrix, out ShadowSplitData splitData);
+            //splitData包括投射阴影物体应该如何被裁剪的信息，我们需要把它传递给shadowSettings
+            shadowSettings.splitData = splitData;
+            int tileIndex = tileOffset + i;
+            //设置当前要渲染的Tile区域
+            //设置阴影变换矩阵(世界空间到光源裁剪空间）
+            dirShadowMatrices[tileIndex] =
+                ConvertToAtlasMatrix(projectionMatrix * viewMatrix, SetTileViewport(tileIndex, split, tileSize), split);
+            //将当前VP矩阵设置为计算出的VP矩阵，准备渲染阴影贴图
+            buffer.SetViewProjectionMatrices(viewMatrix, projectionMatrix);
+            ExecuteBuffer();
+            //使用context.DrawShadows来渲染阴影贴图，其需要传入一个shadowSettings
+            context.DrawShadows(ref shadowSettings);
+        }
+    }
+```
+
+放置4个方向光源后，渲染出的Shadow Atlas如下图所示。
+
+<div align=center>
+
+![20230201231026](https://raw.githubusercontent.com/recaeee/PicGo/main/20230201231026.png)
+
+</div>
+
+#### 3.3 剔除球空间 Culling Spheres
+
+在确定每个级联图要渲染的实际区域时，Unity会为根据级联的阴影裁剪长方体创建一个球型空间，该球形空间会包裹整个阴影裁剪长方体，因此球形的空间会比原长方体多包裹住一些空间，这可能会导致有时在裁剪长方体区域外也会绘制一些阴影。下图为Culling Spheres的可视化图。
+
+<div align=center>
+
+![20230201231702](https://raw.githubusercontent.com/recaeee/PicGo/main/20230201231702.png)
+
+</div>
+
+**Culling Spheres的作用是让Shader确定相机渲染的每个片元需要采样哪个级联图**。原理很简单，**对于相机要渲染的一个片元，计算出其光源空间下的坐标，通过它计算片元与每个Culling Sphere球心的距离，最后确定属于哪个球空间内，采样对应级联图**。
+
+因此，在这一节中，主要实现了将级联信息（级联数、每个级联Culling Shpere信息）传递给GPU（代码不贴了，控制篇幅，后续将继续提炼）。
+
+#### 3.4 采样级联图
+
+上述小节已经把采样哪张级联图的逻辑讲的很清楚了，这一节就是具体在shader中实现上述逻辑。这里不禁感慨，之前一直以为阴影级联有多么高大上，这么看来，不过是只纸老虎，逻辑真的太简单了。
+
+计算使用哪张级联图的代码如下，非常简单。
+
+```c#
+//计算给定片元将要使用的级联信息
+ShadowData GetShadowData(Surface surfaceWS)
+{
+    ShadowData data;
+    int i;
+    for(i=0;i<_CascadeCount;i++)
+    {
+        float4 sphere = _CascadeCullingSpheres[i];
+        float distanceSqr = DistanceSquared(surfaceWS.position,sphere.xyz);
+        if(distanceSqr < sphere.w)
+        {
+            break;
+        }
+    }
+    data.cascadeIndex = i;
+    return data;
+}
+```
+
+完成后，效果图如下，目前还是比较难看出来其带来的效果，因为大家的目光都会被精神污染的自阴影给吸引哈哈哈。
+
+<div align=center>
+
+![20230202000651](https://raw.githubusercontent.com/recaeee/PicGo/main/20230202000651.png)
+
+</div>
+
+#### 3.5 剔除阴影采样 Culling Shadow Sampling
 
 #### 参考
 
@@ -830,3 +959,4 @@ Light GetDirectionalLight(int index, Surface surfaceWS)
 6. https://learn.microsoft.com/en-us/windows/win32/direct3dhlsl/dx-graphics-hlsl-to-samplecmp
 7. https://docs.unity3d.com/cn/current/Manual/SL-SamplerStates.html
 8. https://zhuanlan.zhihu.com/p/545056819
+9. https://docs.unity3d.com/cn/2021.3/Manual/shadow-cascades.html
