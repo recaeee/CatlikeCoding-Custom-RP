@@ -7,11 +7,12 @@ public class Shadows
     private const string bufferName = "Shadows";
     //支持阴影的方向光源最大数（注意这里，我们可以有多个方向光源，但支持的阴影的最多只有4个）
     private const int maxShadowedDirectionalLightCount = 4, maxCascades = 4;
-    //方向光源Shadow Atlas、阴影变化矩阵数组的标识、级联总数、单个级联的CullingSphere索引
+    //方向光源Shadow Atlas、阴影变化矩阵数组的标识、级联总数、单个级联的CullingSphere索引、最大阴影距离
     private static int dirShadowAtlasId = Shader.PropertyToID("_DirectionalShadowAtlas"),
         dirShadowMatricesId = Shader.PropertyToID("_DirectionalShadowMatrices"),
         cascadeCountId = Shader.PropertyToID("_CascadeCount"),
-        cascadeCullingSpheresId = Shader.PropertyToID("_CascadeCullingSpheres");
+        cascadeCullingSpheresId = Shader.PropertyToID("_CascadeCullingSpheres"),
+        shadowDistanceId = Shader.PropertyToID("_ShadowDistance");
     //将世界坐标转换到阴影贴图上的像素坐标的变换矩阵
     private static Matrix4x4[] dirShadowMatrices = new Matrix4x4[maxShadowedDirectionalLightCount * maxCascades];
     //每个级联的Culling Shpere信息，xyz为球心坐标，w为半径
@@ -124,6 +125,8 @@ public class Shadows
         }
         //传递所有阴影变换矩阵给GPU
         buffer.SetGlobalMatrixArray(dirShadowMatricesId, dirShadowMatrices);
+        //传递最大阴影距离给GPU
+        buffer.SetGlobalFloat(shadowDistanceId, settings.maxDistance);
         buffer.EndSample(bufferName);
         ExecuteBuffer();
     }

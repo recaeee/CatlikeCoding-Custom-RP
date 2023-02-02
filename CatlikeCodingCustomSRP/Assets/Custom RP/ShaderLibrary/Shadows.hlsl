@@ -24,6 +24,8 @@ CBUFFER_START(_CustomShadows)
     float4 _CascadeCullingSpheres[MAX_CASCADE_COUNT];
     //接收CPU端传来的每个Shadow Tile(级联）的阴影变换矩阵
     float4x4 _DirectionalShadowMatrices[MAX_SHADOWED_DIRECTIONAL_LIGHT_COUNT * MAX_CASCADE_COUNT];
+    //最大阴影距离
+    float _ShadowDistance;
 CBUFFER_END
 
 //每个方向光源的的阴影信息（包括不支持阴影的光源，不支持，其阴影强度就是0）
@@ -61,12 +63,16 @@ struct ShadowData
 {
     //当前片元使用的级联索引
     int cascadeIndex;
+    //级联阴影的强度，0阴影最淡消失，1阴影完全存在，用来控制不同距离级联阴影过渡
+    float strength;
 };
 
 //计算给定片元将要使用的级联信息
 ShadowData GetShadowData(Surface surfaceWS)
 {
     ShadowData data;
+    data.strength = surfaceWS.depth < _ShadowDistance ? 1.0 : 0.0;
+    // data.strength = 1;
     int i;
     for(i=0;i<_CascadeCount;i++)
     {
@@ -76,6 +82,10 @@ ShadowData GetShadowData(Surface surfaceWS)
         {
             break;
         }
+    }
+    if(i==_CascadeCount)
+    {
+        data.strength = 0.0;
     }
     data.cascadeIndex = i;
     return data;

@@ -949,6 +949,15 @@ ShadowData GetShadowData(Surface surfaceWS)
 
 #### 3.5 剔除阴影采样 Culling Shadow Sampling
 
+这一节主要实现了当片元的位置超出了最大的级联Culling Sphere时，不对其渲染阴影，将其阴影强度设置为0。
+
+#### 3.6 最大阴影距离 Max Distance
+
+由于最大级联的Culling Sphere会比实际的阴影裁剪长方体多出一些空间，可能会导致一些最远处绘制的阴影突然消失。因此，我们通过判断**片元在观察空间下的深度值是否超过maxShadowDistance**，如果超过，则不对其渲染阴影，这样，范围外的阴影会自然消失。我们需要将maxShadowDistance传递给GPU，并且为每个片元计算观察空间下的z值作为深度值。对于TransformWorldToView(input.positionWS).z，我们需要将其取反作为真正的深度值，因为观察空间的z轴是指向摄像机正后方的。（其实我并没有看出3.5节和3.6节的阴影有多大区别。）
+
+#### 3.7 渐变阴影 Fading Shadows
+
+
 #### 参考
 
 1. https://www.bilibili.com/video/BV1X7411F744/?spm_id_from=333.999.0.0

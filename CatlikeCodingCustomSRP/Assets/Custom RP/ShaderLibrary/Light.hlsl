@@ -35,8 +35,8 @@ int GetDirectionalLightCount()
 DirectionalShadowData GetDirectionalShadowData(int lightIndex, ShadowData shadowData)
 {
     DirectionalShadowData data;
-    //阴影强度
-    data.strength = _DirectionalLightShadowData[lightIndex].x;
+    //阴影强度(考虑级联过渡的阴影强度）
+    data.strength = _DirectionalLightShadowData[lightIndex].x * shadowData.strength;;
     //Tile索引
     data.tileIndex = _DirectionalLightShadowData[lightIndex].y + shadowData.cascadeIndex;
     return data;
