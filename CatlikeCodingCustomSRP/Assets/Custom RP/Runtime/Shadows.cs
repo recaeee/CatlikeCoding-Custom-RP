@@ -7,12 +7,12 @@ public class Shadows
     private const string bufferName = "Shadows";
     //支持阴影的方向光源最大数（注意这里，我们可以有多个方向光源，但支持的阴影的最多只有4个）
     private const int maxShadowedDirectionalLightCount = 4, maxCascades = 4;
-    //方向光源Shadow Atlas、阴影变化矩阵数组的标识、级联总数、单个级联的CullingSphere索引、最大阴影距离
+    //方向光源Shadow Atlas、阴影变化矩阵数组的标识、级联总数、单个级联的CullingSphere索引、Vector3(最大阴影距离，渐变距离比例，最大级联渐变比例）
     private static int dirShadowAtlasId = Shader.PropertyToID("_DirectionalShadowAtlas"),
         dirShadowMatricesId = Shader.PropertyToID("_DirectionalShadowMatrices"),
         cascadeCountId = Shader.PropertyToID("_CascadeCount"),
         cascadeCullingSpheresId = Shader.PropertyToID("_CascadeCullingSpheres"),
-        shadowDistanceId = Shader.PropertyToID("_ShadowDistance");
+        shadowDistanceFadeId = Shader.PropertyToID("_ShadowDistanceFade");
     //将世界坐标转换到阴影贴图上的像素坐标的变换矩阵
     private static Matrix4x4[] dirShadowMatrices = new Matrix4x4[maxShadowedDirectionalLightCount * maxCascades];
     //每个级联的Culling Shpere信息，xyz为球心坐标，w为半径
@@ -125,8 +125,9 @@ public class Shadows
         }
         //传递所有阴影变换矩阵给GPU
         buffer.SetGlobalMatrixArray(dirShadowMatricesId, dirShadowMatrices);
-        //传递最大阴影距离给GPU
-        buffer.SetGlobalFloat(shadowDistanceId, settings.maxDistance);
+        //传递Vecotr3(1/maxShadowDistance,1/distanceFade, 1-(1-f)^2)给GPU，在cpu中处理成倒数，gpu中只需要做一次乘法（效率比除法高）
+        float f = 1f - settings.directional.cascadeFade;
+        buffer.SetGlobalVector(shadowDistanceFadeId, new Vector4(1f/settings.maxDistance,1/settings.distanceFade,1f / (1f - f*f)));
         buffer.EndSample(bufferName);
         ExecuteBuffer();
     }
@@ -177,9 +178,14 @@ public class Shadows
             buffer.SetGlobalVectorArray(cascadeCullingSpheresId, cascadeCullingShperes);
             //将当前VP矩阵设置为计算出的VP矩阵，准备渲染阴影贴图
             buffer.SetViewProjectionMatrices(viewMatrix, projectionMatrix);
+            //在渲染阴影贴图前设置depth Bias来消除阴影痤疮,传入bias和slopBias
+            //这里的bias单位应该不是米
+            // buffer.SetGlobalDepthBias(0f,3f);
             ExecuteBuffer();
             //使用context.DrawShadows来渲染阴影贴图，其需要传入一个shadowSettings
             context.DrawShadows(ref shadowSettings);
+            //渲染完阴影贴图后将bias设置回0
+            // buffer.SetGlobalDepthBias(0f, 0f);
         }
     }
 

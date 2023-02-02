@@ -94,8 +94,8 @@ float4 LitPassFragment(Varyings input) : SV_TARGET
     surface.position = input.positionWS;
     surface.normal = normalize(input.normalWS);
     surface.viewDirection = normalize(_WorldSpaceCameraPos - input.positionWS);
-    //计算观察空间的片元深度值时需要取反，因为观察空间z轴指向摄像机正后方
-    surface.depth = -TransformWorldToView(input.positionWS.z);
+    //计算观察空间的片元深度值时需要取反，（可能因为观察空间z轴指向摄像机正后方）
+    surface.depth = -TransformWorldToView(input.positionWS).z;
     surface.color = base.rgb;
     surface.alpha = base.a;
     surface.metallic = UNITY_ACCESS_INSTANCED_PROP(UnityPerMaterial,_Metallic);

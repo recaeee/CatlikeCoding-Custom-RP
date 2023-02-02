@@ -24,8 +24,8 @@ CBUFFER_START(_CustomShadows)
     float4 _CascadeCullingSpheres[MAX_CASCADE_COUNT];
     //接收CPU端传来的每个Shadow Tile(级联）的阴影变换矩阵
     float4x4 _DirectionalShadowMatrices[MAX_SHADOWED_DIRECTIONAL_LIGHT_COUNT * MAX_CASCADE_COUNT];
-    //最大阴影距离
-    float _ShadowDistance;
+    //Vector2(最大阴影距离,渐变距离比例）
+    float4 _ShadowDistanceFade;
 CBUFFER_END
 
 //每个方向光源的的阴影信息（包括不支持阴影的光源，不支持，其阴影强度就是0）
@@ -67,11 +67,24 @@ struct ShadowData
     float strength;
 };
 
+/**
+ * \brief 计算考虑渐变的级联阴影强度
+ * \param distance 当前片元深度
+ * \param scale 1/maxDistance 将当前片元深度缩放到 [0,1]内
+ * \param fade 渐变比例，值越大，开始衰减的距离越远，衰减速度越大
+ * \return 级联阴影强度
+ */
+float FadedShadowStrength(float distance,float scale,float fade)
+{
+    //saturate抑制了近处的级联阴影强度到1
+    return saturate((1.0 - distance * scale) * fade);
+}
+
 //计算给定片元将要使用的级联信息
 ShadowData GetShadowData(Surface surfaceWS)
 {
     ShadowData data;
-    data.strength = surfaceWS.depth < _ShadowDistance ? 1.0 : 0.0;
+    data.strength = FadedShadowStrength(surfaceWS.depth,_ShadowDistanceFade.x,_ShadowDistanceFade.y);
     // data.strength = 1;
     int i;
     for(i=0;i<_CascadeCount;i++)
@@ -80,6 +93,11 @@ ShadowData GetShadowData(Surface surfaceWS)
         float distanceSqr = DistanceSquared(surfaceWS.position,sphere.xyz);
         if(distanceSqr < sphere.w)
         {
+            //对最大级联处做特殊的过渡
+            if(i==_CascadeCount - 1)
+            {
+                data.strength *= FadedShadowStrength(distanceSqr, 1.0 / sphere.w, _ShadowDistanceFade.z);
+            }
             break;
         }
     }

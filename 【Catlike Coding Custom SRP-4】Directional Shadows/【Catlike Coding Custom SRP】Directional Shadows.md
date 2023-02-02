@@ -953,10 +953,72 @@ ShadowData GetShadowData(Surface surfaceWS)
 
 #### 3.6 最大阴影距离 Max Distance
 
-由于最大级联的Culling Sphere会比实际的阴影裁剪长方体多出一些空间，可能会导致一些最远处绘制的阴影突然消失。因此，我们通过判断**片元在观察空间下的深度值是否超过maxShadowDistance**，如果超过，则不对其渲染阴影，这样，范围外的阴影会自然消失。我们需要将maxShadowDistance传递给GPU，并且为每个片元计算观察空间下的z值作为深度值。对于TransformWorldToView(input.positionWS).z，我们需要将其取反作为真正的深度值，因为观察空间的z轴是指向摄像机正后方的。（其实我并没有看出3.5节和3.6节的阴影有多大区别。）
+由于最大级联的Culling Sphere会比实际的阴影裁剪长方体多出一些空间，可能会导致一些最远处绘制的阴影突然消失。因此，我们通过判断**片元在观察空间下的深度值是否超过maxShadowDistance**，如果超过，则不对其渲染阴影，这样，范围外的阴影会自然消失。我们需要将maxShadowDistance传递给GPU，并且为每个片元计算观察空间下的z值作为深度值。对于TransformWorldToView(input.positionWS).z，我们需要将其取反作为真正的深度值，因为观察空间的z轴是指向摄像机正后方的。其实我并没有看出3.5节和3.6节的阴影有多大区别，但是，该深度值在下一章节做渐变阴影的时候会发挥很大作用。
 
 #### 3.7 渐变阴影 Fading Shadows
 
+目前，我们的阴影会在超出maxShadowDistance的地方突然消失，因此我们考虑让越远的阴影强度越淡，从而自然地消失。我们通过设计一个函数来控制级联强度在不同片元深度下的结果，原教程使用的函数形状如下所示。
+
+<div align=center>
+
+![20230202224728](https://raw.githubusercontent.com/recaeee/PicGo/main/20230202224728.png)
+
+</div>
+
+方法如下，比较简单。
+
+```c#
+/**
+ * \brief 计算考虑渐变的级联阴影强度
+ * \param distance 当前片元深度
+ * \param scale 1/maxDistance 将当前片元深度缩放到 [0,1]内
+ * \param fade 渐变比例，值越大，开始衰减的距离越远，衰减速度越大
+ * \return 级联阴影强度
+ */
+float FadedShadowStrength(float distance,float scale,float fade)
+{
+    //saturate抑制了近处的级联阴影强度到1
+    return saturate((1.0 - distance * scale) * fade);
+}
+```
+
+其效果如下图所示。
+
+<div align=center>
+
+![20230202225445](https://raw.githubusercontent.com/recaeee/PicGo/main/20230202225445.png)
+
+</div>
+
+#### 3.8 渐变最大级联 Fading Cascades
+
+上一节我们实现了对所有级联等级下的阴影的过渡，这一节中，我们对最大级联下的阴影再乘以一个系数来控制，由此我们可以更好地**控制在最远处的阴影是如何自然消失的**。其函数和上一节稍有不同，另外会在_ShadowDistanceFade中配置第三个参数来控制该项。由于效果肉眼比较不可见，就不贴图了。
+
+#### 4 阴影质量 Shadow Quality
+
+<div align=center>
+
+![20230202230944](https://raw.githubusercontent.com/recaeee/PicGo/main/20230202230944.png)
+
+</div>
+
+目前，我们就拥有了一个可控且有效的阴影级联系统，接下来来解决那些掉san的自阴影，通常其被称为**阴影痤疮shadow acne**，其形成的原因可以解释为**物体不正确的自阴影**。由于阴影贴图上的一个像素覆盖的实际区域并不一定完全垂直于光源，但其都被该像素定义成了一个平面上的深度值，因此，实际不同深度的片元在采样该阴影贴图上的像素时产生了错误的比较结果，也就产生了这些阴影痤疮shadow acne。
+
+即使我们增大阴影贴图的精度，也只会使这些shadow acne变得更小更多，并不能完全解决该问题。
+
+#### 4.1 深度偏移 Depth Bias
+
+因为阴影痤疮的产生是多个相邻的片元对应同一个深度，导致其中部分片元大于深度，部分片元小于深度，那我们就可以让这些相邻的片元对应的这个深度值手动偏移增大一些，让这些相邻的片元都小于该深度，就得到了统一的结果，不会产生阴影痤疮，这种方法就叫做**深度偏移Depth Bias**。这也是实际场景中经常使用的一个方法，简单并且高效。但其带来的副作用就是真正需要投射阴影的地方也产生一定的偏移，毕竟总体深度偏移了，这种现象叫做**Peter-Panning**，如下图所示，导致的效果就是看起来物体像浮在地面上一样。
+
+<div align=center>
+
+![20230203000124](https://raw.githubusercontent.com/recaeee/PicGo/main/20230203000124.png)
+
+</div>
+
+除了Depth Bias，还有一种更“人性化”一点的方法:**斜率偏差Slope Bias**。其原理我没有深入了解，只是做了一定猜测。对于阴影贴图上要渲染的每个片元，计算方向光源与片元对应实际物体表面（可能用的是片元的法线信息做依据）的夹角，对于完全垂直于光源方向的片元（物体表面），不对其偏移；而当夹角增大，则设置不同程度的偏移。
+
+以上，Depth Bias和Slope Bias两种方法的一大缺点就是，实际使用的值需要经过人为多次尝试后才能确定出一个合理值，因此我们目前不采用这两种方法。
 
 #### 参考
 

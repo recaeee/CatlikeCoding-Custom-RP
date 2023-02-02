@@ -53,6 +53,7 @@ Light GetDirectionalLight(int index, Surface surfaceWS, ShadowData shadowData)
     DirectionalShadowData dirShadowData = GetDirectionalShadowData(index, shadowData);
     //计算片元对应的光源衰减度
     light.attenuation = GetDirectionalShadowAttenuation(dirShadowData, surfaceWS);
+    // light.attenuation = shadowData.cascadeIndex * 0.25;
     return light;
 }
 
