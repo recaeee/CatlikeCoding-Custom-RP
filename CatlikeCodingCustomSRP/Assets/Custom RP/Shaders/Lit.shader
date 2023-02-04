@@ -12,6 +12,10 @@ Shader "Custom RP/Lit"
         _Cutoff("Alpha Cutoff",Range(0.0,1.0)) = 0.5
         //Clip的Shader关键字，启用该Toggle会将_Clipping关键字添加到该材质的活动关键字列表中，而禁用该Toggle会将其删除
         [Toggle(_CLIPPING)] _Clipping("Alpha Clipping",Float) = 0
+        //是否接收阴影
+        [Toggle(_RECEIVE_SHADOWS)] _ReceiveShadows("Receive Shadows",Float) = 1
+        //阴影投射模式
+        [KeywordEnum(On,Clip,Dither,Off)] _Shadows("Shadows",Float) = 0
         //PBR模型下Metallic Workflow的两个物体表面参数
         //金属度
         _Metallic("Metallic",Range(0,1)) = 0
@@ -46,8 +50,14 @@ Shader "Custom RP/Lit"
             #pragma target 3.5
             //告诉Unity启用_CLIPPING关键字时编译不同版本的Shader
             #pragma shader_feature _CLIPPING
+            //定义是否接收阴影关键字
+            #pragma shader_feature _RECEIVE_SHADOWS
             //定义diffuse项是否使用Premultiplied alpha的关键字
             #pragma shader_feature _PREMULTIPLY_ALPHA
+            //定义PCF关键字,无关键字为2
+            #pragma multi_compile _ _DIRECTIONAL_PCF3 _DIRECTIONAL_PCF5 _DIRECTIONAL_PCF7
+            //定义级联混合的关键字
+            #pragma multi_compile _ _CASCADE_BLEND_SOFT _CASCADE_BLEND_DITHER
             //这一指令会让Unity生成两个该Shader的变体，一个支持GPU Instancing，另一个不支持。
             #pragma multi_compile_instancing
             #pragma vertex LitPassVertex
@@ -70,8 +80,8 @@ Shader "Custom RP/Lit"
             HLSLPROGRAM
             //支持的最低平台
             #pragma target 3.5
-            //支持Alpha Test的裁剪
-            #pragma shader_feature _CLIPPING
+            //阴影投射模式
+            #pragma shader_feature _ _SHADOWS_CLIP _SHADOWS_DITHER
             //定义diffuse项是否使用Premultiplied alpha的关键字
             #pragma multi_compile_instancing
             #pragma vertex ShadowCasterPassVertex

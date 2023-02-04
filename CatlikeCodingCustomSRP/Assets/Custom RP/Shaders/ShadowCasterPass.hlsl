@@ -45,6 +45,12 @@ Varyings ShadowCasterPassVertex(Attributes input)
     UNITY_TRANSFER_INSTANCE_ID(input,output);
     float3 positionWS = TransformObjectToWorld(input.positionOS);
     output.positionCS = TransformWorldToHClip(positionWS);
+
+    #if UNITY_REVERSED_Z
+        output.positionCS.z = min(output.positionCS.z, output.positionCS.w * UNITY_NEAR_CLIP_VALUE);
+    #else
+        output.positionCS.z = max(output.positionCS.z, output.positionCS.w * UNITY_NEAR_CLIP_VALUE);
+    #endif
     //应用纹理ST变换
     float4 baseST = UNITY_ACCESS_INSTANCED_PROP(UnityPerMaterial,_BaseMap_ST);
     output.baseUV = input.baseUV * baseST.xy + baseST.zw;
@@ -61,10 +67,14 @@ void ShadowCasterPassFragment(Varyings input)
     float4 baseColor =  UNITY_ACCESS_INSTANCED_PROP(UnityPerMaterial, _BaseColor);
     float4 base = baseMap * baseColor;
 
-    //只有在_CLIPPING关键字启用时编译该段代码
-    #if defined(_CLIPPING)
-    //clip函数的传入参数如果<=0则会丢弃该片元
-    clip(base.a - UNITY_ACCESS_INSTANCED_PROP(UnityPerMaterial, _Cutoff));
+    //只有在_SHADOWS_CLIP关键字启用时编译该段代码
+    #if defined(_SHADOWS_CLIP)
+        //clip函数的传入参数如果<=0则会丢弃该片元
+        clip(base.a - UNITY_ACCESS_INSTANCED_PROP(UnityPerMaterial, _Cutoff));
+    #elif defined(_SHADOWS_DITHER)
+        //类似棋盘算法裁剪Blend透明模式物体的阴影
+        float dither = InterleavedGradientNoise(input.positionCS.xy,0);
+        clip(base.a - dither);
     #endif
     //到这里就结束了，我们不需要返回任何值，其片元深度会写入阴影贴图的DepthBuffer
 }

@@ -7,16 +7,32 @@ public class Shadows
     private const string bufferName = "Shadows";
     //支持阴影的方向光源最大数（注意这里，我们可以有多个方向光源，但支持的阴影的最多只有4个）
     private const int maxShadowedDirectionalLightCount = 4, maxCascades = 4;
-    //方向光源Shadow Atlas、阴影变化矩阵数组的标识、级联总数、单个级联的CullingSphere索引、Vector3(最大阴影距离，渐变距离比例，最大级联渐变比例）
+    //软阴影的PCF过滤模式Shader关键字
+    private static string[] directionalFilterKeywords =
+    {
+        "_DIRECTIONAL_PCF3",
+        "_DIRECTIONAL_PCF5",
+        "_DIRECTIONAL_PCF7"
+    };
+    //软阴影、抖动级联混合关键字
+    private static string[] cascadeBlendKeywords =
+    {
+        "_CASCADE_BLEND_SOFT",
+        "_CASCADE_BLEND_DITHER"
+    };
+    //方向光源Shadow Atlas、阴影变化矩阵数组的标识、级联总数、单个级联的CullingSphere索引、级联信息、PCF过滤需要的阴影贴图信息（atlas大小、texel大小）、Vector3(最大阴影距离，渐变距离比例，最大级联渐变比例）
     private static int dirShadowAtlasId = Shader.PropertyToID("_DirectionalShadowAtlas"),
         dirShadowMatricesId = Shader.PropertyToID("_DirectionalShadowMatrices"),
         cascadeCountId = Shader.PropertyToID("_CascadeCount"),
         cascadeCullingSpheresId = Shader.PropertyToID("_CascadeCullingSpheres"),
+        cascadeDataId = Shader.PropertyToID("_CascadeData"),
+        shadowAtlasSizeId = Shader.PropertyToID("_ShadowAtlasSize"),
         shadowDistanceFadeId = Shader.PropertyToID("_ShadowDistanceFade");
     //将世界坐标转换到阴影贴图上的像素坐标的变换矩阵
     private static Matrix4x4[] dirShadowMatrices = new Matrix4x4[maxShadowedDirectionalLightCount * maxCascades];
-    //每个级联的Culling Shpere信息，xyz为球心坐标，w为半径
-    private static Vector4[] cascadeCullingShperes = new Vector4[maxCascades];
+    //每个级联的Culling Shpere信息（xyz为球心坐标，w为半径）、级联信息
+    private static Vector4[] cascadeCullingShperes = new Vector4[maxCascades],
+        cascadeData = new Vector4[maxCascades];
     
     private CommandBuffer buffer = new CommandBuffer()
     {
@@ -34,6 +50,10 @@ public class Shadows
     {
         //当前光源的索引，猜测该索引为CullingResults中光源的索引(也是Lighting类下的光源索引，它们都是统一的，非常不错~）
         public int visibleLightIndex;
+        //当前光源的slopeScaleBias
+        public float slopeScaleBias;
+        //光源阴影裁剪视锥体近平面偏移（向后）
+        public float nearPlaneOffset;
     }
 
     //虽然我们目前最大光源数为1，但依然用数组存储，因为最大数量可配置嘛~
@@ -60,8 +80,8 @@ public class Shadows
     }
 
     //每帧执行，用于为light配置shadow altas（shadowMap）上预留一片空间来渲染阴影贴图，同时存储一些其他必要信息
-    //返回每个光源的阴影强度和其第一个级联的索引，传递给GPU存储到Light结构体
-    public Vector2 ReserveDirectionalShadows(Light light, int visibleLightIndex)
+    //返回每个光源的阴影强度、其第一个级联的索引、光源的阴影法线偏移，传递给GPU存储到Light结构体
+    public Vector3 ReserveDirectionalShadows(Light light, int visibleLightIndex)
     {
         //配置光源数不超过最大值
         //只配置开启阴影且阴影强度大于0的光源
@@ -71,11 +91,15 @@ public class Shadows
         {
             ShadowedDirectionalLights[ShadowedDirectionalLightCount] = new ShadowedDirectionalLight()
             {
-                visibleLightIndex = visibleLightIndex
+                visibleLightIndex = visibleLightIndex,
+                //slopeScaleBias直接读取原生light组件上的shadowBias属性
+                slopeScaleBias = light.shadowBias,
+                nearPlaneOffset = light.shadowNearPlane
             };
-            return new Vector2(light.shadowStrength, settings.directional.cascadeCount * ShadowedDirectionalLightCount++);
+            return new Vector3(light.shadowStrength,
+                settings.directional.cascadeCount * ShadowedDirectionalLightCount++, light.shadowNormalBias);
         }
-        return Vector2.zero;
+        return Vector3.zero;
     }
 
     //渲染阴影贴图
@@ -128,6 +152,11 @@ public class Shadows
         //传递Vecotr3(1/maxShadowDistance,1/distanceFade, 1-(1-f)^2)给GPU，在cpu中处理成倒数，gpu中只需要做一次乘法（效率比除法高）
         float f = 1f - settings.directional.cascadeFade;
         buffer.SetGlobalVector(shadowDistanceFadeId, new Vector4(1f/settings.maxDistance,1/settings.distanceFade,1f / (1f - f*f)));
+        //设置PCF关键字
+        SetKeywords(directionalFilterKeywords, (int)settings.directional.filter - 1);
+        SetKeywords(cascadeBlendKeywords, (int)settings.directional.cascadeBlendMode - 1);
+        //传递Shadow Atlas的尺寸和Texel大小
+        buffer.SetGlobalVector(shadowAtlasSizeId, new Vector4(atlasSize, 1f / atlasSize));
         buffer.EndSample(bufferName);
         ExecuteBuffer();
     }
@@ -150,23 +179,24 @@ public class Shadows
         int tileOffset = index * cascadeCount;
         //级联Ratios（控制渲染区域）
         Vector3 ratios = settings.directional.CascadeRatios;
+        //定义级联剔除ShadowCaster的范围，值越小，剔除的对象越少，级联共享的渲染对象越多
+        float cullingFactor = Mathf.Max(0f, 0.8f - settings.directional.cascadeFade);
         //渲染每个级联的阴影贴图
         for (int i = 0; i < cascadeCount; i++)
         {
             //使用Unity提供的接口来为方向光源计算出其渲染阴影贴图用的VP矩阵和splitData
             cullingResults.ComputeDirectionalShadowMatricesAndCullingPrimitives(light.visibleLightIndex,
                 i, cascadeCount, ratios,
-                tileSize, 0f,
+                tileSize, light.nearPlaneOffset,
                 out Matrix4x4 viewMatrix, out Matrix4x4 projectionMatrix, out ShadowSplitData splitData);
+            //对于一个级联，剔除其已经出现在上个级联被渲染掉的ShadowCaster，减少重复渲染
+            splitData.shadowCascadeBlendCullingFactor = cullingFactor;
             //splitData包括投射阴影物体应该如何被裁剪的信息，我们需要把它传递给shadowSettings
             shadowSettings.splitData = splitData;
             //只需要设置一次每个级联的Culling Spheres信息，因为其坐标为光源空间下，相对每个光源位置都一样
             if (index == 0)
             {
-                Vector4 cullingSphere = splitData.cullingSphere;
-                //在cpu端对小球半径平方，方便在shader中计算片元与Culling Sphere的距离
-                cullingSphere.w *= cullingSphere.w;
-                cascadeCullingShperes[i] = cullingSphere;
+                SetCascadeData(i, splitData.cullingSphere, tileSize);
             }
             int tileIndex = tileOffset + i;
             //设置当前要渲染的Tile区域
@@ -176,16 +206,35 @@ public class Shadows
             //将级联信息传递给GPU
             buffer.SetGlobalInt(cascadeCountId, settings.directional.cascadeCount);
             buffer.SetGlobalVectorArray(cascadeCullingSpheresId, cascadeCullingShperes);
+            buffer.SetGlobalVectorArray(cascadeDataId, cascadeData);
             //将当前VP矩阵设置为计算出的VP矩阵，准备渲染阴影贴图
             buffer.SetViewProjectionMatrices(viewMatrix, projectionMatrix);
             //在渲染阴影贴图前设置depth Bias来消除阴影痤疮,传入bias和slopBias
             //这里的bias单位应该不是米
-            // buffer.SetGlobalDepthBias(0f,3f);
+            buffer.SetGlobalDepthBias(0f, light.slopeScaleBias);
             ExecuteBuffer();
             //使用context.DrawShadows来渲染阴影贴图，其需要传入一个shadowSettings
             context.DrawShadows(ref shadowSettings);
             //渲染完阴影贴图后将bias设置回0
-            // buffer.SetGlobalDepthBias(0f, 0f);
+            buffer.SetGlobalDepthBias(0f, 0f);
+        }
+    }
+
+    /// <summary>
+    /// 设置Shader关键字
+    /// </summary>
+    void SetKeywords(string[] keywords,int enabledIndex)
+    {
+        for (int i = 0; i < keywords.Length; i++)
+        {
+            if (i == enabledIndex)
+            {
+                buffer.EnableShaderKeyword(keywords[i]);
+            }
+            else
+            {
+                buffer.DisableShaderKeyword(keywords[i]);
+            }
         }
     }
 
@@ -228,6 +277,26 @@ public class Shadows
         m.m22 = 0.5f * (m.m22 + m.m32);
         m.m23 = 0.5f * (m.m23 + m.m33);
         return m;
+    }
+
+    /// <summary>
+    /// 初始设置级联数据，后续会将这些数据传递给GPU
+    /// </summary>
+    /// <param name="index">级联索引</param>
+    /// <param name="cullingSphere">级联CullingSphere</param>
+    /// <param name="tileSize">tile大小</param>
+    void SetCascadeData(int index, Vector4 cullingSphere, float tileSize)
+    {
+        //根据CullingSphere的半径大致推算出当前级联的纹素大小
+        float texelSize = 2f * cullingSphere.w / tileSize;
+        float filterSize = texelSize * ((float)settings.directional.filter + 1f);
+        //cascadeData[i]：级联球半径倒数、大致纹素大小用于Normal Bias、
+        cascadeData[index] = new Vector4(1f / cullingSphere.w, filterSize * 1.4142136f);
+        //在cpu端对小球半径平方，方便在shader中计算片元与Culling Sphere的距离
+        //防止PCF采样时越界
+        cullingSphere.w -= filterSize;
+        cullingSphere.w *= cullingSphere.w;
+        cascadeCullingShperes[index] = cullingSphere;
     }
 
     //完成因ShadowAtlas所有工作后，释放ShadowAtlas RT

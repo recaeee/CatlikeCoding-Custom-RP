@@ -10,6 +10,8 @@ Shader "Custom RP/Unlit"
         _BaseColor("Color",Color) = (1.0,1.0,1.0,1.0)
         //透明度测试阈值
         _Cutoff("Alpha Cutoff",Range(0.0,1.0)) = 0.5
+        //阴影投射模式
+        [KeywordEnum(On,Clip,Dither,Off)] _Shadows("Shadows",Float) = 0
         //Clip的Shader关键字，启用该Toggle会将_Clipping关键字添加到该材质的活动关键字列表中，而禁用该Toggle会将其删除
         [Toggle(_CLIPPING)] _Clipping("Alpha Clipping",Float) = 0
         //混合模式使用的值，其值应该是枚举值，但是这里使用float
@@ -38,6 +40,31 @@ Shader "Custom RP/Unlit"
             #pragma vertex UnlitPassVertex
             #pragma fragment UnlitPassFragment
             #include "UnlitPass.hlsl"
+            ENDHLSL
+        }
+        
+        //渲染阴影的Pass
+        Pass
+        {
+            //阴影Pass的LightMode为ShadowCaster
+            Tags
+            {
+                "LightMode" = "ShadowCaster"
+            }
+            //因为只需要写入深度，关闭对颜色通道的写入
+            ColorMask 0
+
+            HLSLPROGRAM
+            //支持的最低平台
+            #pragma target 3.5
+            //阴影投射模式
+            #pragma shader_feature _ _SHADOWS_CLIP _SHADOWS_DITHER
+            //定义diffuse项是否使用Premultiplied alpha的关键字
+            #pragma multi_compile_instancing
+            #pragma vertex ShadowCasterPassVertex
+            #pragma fragment ShadowCasterPassFragment
+            //阴影相关方法写在ShadowCasterPass.hlsl
+            #include "ShadowCasterPass.hlsl"
             ENDHLSL
         }
     }

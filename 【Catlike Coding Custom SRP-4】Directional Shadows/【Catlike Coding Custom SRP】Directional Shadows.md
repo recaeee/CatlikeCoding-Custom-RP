@@ -2,6 +2,8 @@
 #### 写在前面
 接下来到方向光的阴影实现了，阴影实现本身不难，难点在于其锯齿的消除以及阴影级联技术的实现，在很多实际项目中，会针对阴影贴图Shadow Map做性能优化，例如分离动静态物体渲染多张阴影图、旋转阴影图方向等等。另外，阴影也是提升游戏质感的一项重要技术，在完成这一章后，我们就能获取一个比较好的渲染效果了。另外，这一章我会尽力压缩篇幅，主要拓展和深入关键知识点，希望做到即使不是实际去搭建SRP管线，大家也能得到一些收获。
 
+前3章节为长篇文章，考虑到篇幅问题与工作量，从第4章节后半部分开始以及未来章节，考虑以提炼原教程为主，尽量减少篇幅与实际代码，在我的Github工程中包含了对源代码的详细注释，如需深入代码细节可以查看我的Github工程。
+
 以下是原教程链接与我的Github工程（Github上会实时同步最新进度）：
 
 [CatlikeCoding-SRP-Tutorial](https://catlikecoding.com/unity/tutorials/custom-srp/)
@@ -1020,6 +1022,124 @@ float FadedShadowStrength(float distance,float scale,float fade)
 
 以上，Depth Bias和Slope Bias两种方法的一大缺点就是，实际使用的值需要经过人为多次尝试后才能确定出一个合理值，因此我们目前不采用这两种方法。
 
+#### 4.2 级联数据 Cascade Data
+
+像DepthBias这种方法操作的是一整个ShadowAtlas，但由于我们使用了级联阴影，如果统一对每个级联图都使用同样的偏移来去除阴影痤疮是不合理的，因此需要**对每个级联等级来执行不同的去除痤疮**。这一节中，构建了一个float4Array的cascadeData，代表每个级联自身的相关信息，来传递给GPU。首先，每个元素的x分量表示其级联球半径的倒数。
+
+#### 4.3 法线偏移 Normal Bias
+
+造成阴影痤疮的主要原因就是摄像机像素和阴影贴图纹素的大小不匹配，确切的说是**多个摄像机像素会对应一个阴影贴图纹素**，也就意味着阴影贴图纹素覆盖的实际区域偏大。而增大阴影贴图精度无法彻底解决该问题，将阴影贴图的所有深度值都增大一些也不太合理。因此，我们考虑使用**法线偏移Normal Bias**。其原理就是，我们在采样阴影贴图之前，**将片元的位置沿着物体表面法线向外偏移一些**，再对阴影贴图采样。这也就意味着，在采样阴影贴图时，**对于那些原本会产生阴影痤疮的片元**，实际采样的出来的会比当前片元的深度偏大一些，造成这个结果的原因挺简单的，但我很难组织出语言来描述，因此手绘了下其原理，如下图所示。
+
+<div align=center>
+
+![20230204193150](https://raw.githubusercontent.com/recaeee/PicGo/main/20230204193150.png)
+
+</div>
+
+实际上，我们只要让原本会产生阴影痤疮的摄像机像素**偏移一个级联Tile的纹素**采样就足够了，因此，我们将具体沿着法线偏移的量设置为**surfaceWS.position+normalBias**，其中normalBias为级联Tile大小的根号2倍。
+
+应用上Normal Bias后，效果图如下所示。
+
+<div align=center>
+
+![20230204193740](https://raw.githubusercontent.com/recaeee/PicGo/main/20230204193740.png)
+
+</div>
+
+但是，Normal Bias也不是完全没问题的。其会造成一些比阴影痤疮更不明显的问题，比如“光渗”等。
+
+#### 4.4 可配置偏移 Configurable Biases
+
+将slopeShadowBias和NormalBias设置成每个光源的可配置属性，教程里直接使用了Light组件里的Bias和Normal Bias来作为这两个属性的配置（这里其实是偷懒，这两个值在默认管线中不完全代表这两个含义）。配置slopeShadowBias的目的在于避免NormalBias带来的一些阴影问题，比如墙面和地面夹角的一些阴影问题。通常来说，slopeShadowBias设置为0，NormalBias设置为1比较合理。
+
+#### 4.5 阴影平坠 Shadow Pancaking
+
+参考[《Unity官方文档——阴影故障排除》](https://docs.unity.cn/cn/2020.2/Manual/ShadowPerformance.html)，为了进一步防止阴影痤疮，Unity采用了一种称为**阴影平坠Shadow Pancaking**的技术，该技术旨在减少沿光源方向渲染阴影贴图时使用的光照空间范围，这可以提高阴影贴图的精度，减少阴影痤疮。
+
+简单来说，该技术让光源的阴影裁剪长方体的近裁面尽可能远离光源，只保留摄像机视锥体内的物体。但是如果有一个Shadow Caster（带阴影的物体）穿过了该近裁面，Unity默认管线会将超出的物体顶点钳制到裁剪长方体内，具体可以参考官方文档。我们需要在我们的管线中也实现顶点钳制，否则顶点会直接被裁剪掉，产生不正确的阴影。
+
+但是将顶点钳制到近平面内当然会使阴影也发生扭曲，虽然很少会有这样特殊的物体出现，但是我们可以通过将光源的阴影裁剪近裁面拉近光源来避免该问题，将其设置为可配置属性nearPlaneOffset（Light组件的shadowNearPlane）。
+
+#### 4.6 PCF过滤 PCF Filtering
+
+目前我们实现的阴影效果属于硬阴影，而软阴影的实现可以通过PCF过滤来实现，PCF过滤即**Percentage Closer Filtering**，在2.3节中SAMPLER_CMP其内部就是PCF过滤实现采样的，其原理在2.3节中已讲过，在此不做过多赘述。值得注意的是，3x3的PCF是通过4次2x2的PCF来实现的，由此类推更高等级的PCF。
+
+在增大PCF过滤的采样范围时，会导致阴影痤疮再次出现，因此需要根据PCF等级动态调整NormalBias来消除它。
+
+PCF7x7的效果图如下所示。
+
+<div align=center>
+
+![20230204215836](https://raw.githubusercontent.com/recaeee/PicGo/main/20230204215836.png)
+
+</div>
+
+#### 4.7 混合级联 Blending Cascades
+
+在加入软阴影后，不同级联之间的阴影过渡处又产生了明显的不自然的变化，对于这些级联交界处，我们对其采样这两张级联的阴影结果，并根据一定值插值两者，得到较为自然的过渡。效果有些，但是也不是很明显，不贴效果图了。
+
+#### 4.8 抖动过渡 Dithered Transition
+
+上一节中的软阴影混合级联，对于交界处的片元，需要对两个级联图进行采样，每个级联图内又要进行PCF采样多次，最后性能可能会变得很差。因此引入**抖动过渡Dithered Transition**，其过渡质量比软阴影混合稍差，但**对于一个片元只需要采样一个级联图**，性能提升非常大。其原理为，对于级联交界处的片元，根据特定的抖动算法（CoreRP库自带有）与片元的位置计算出一个抖动值，然后在计算其需要使用的级联图时，根据片元的抖动值让部分片元采样下一级的级联图。其思路有点类似于早期透明混合的棋盘算法，在高分辨率下很难穿帮，并且配合AA后处理效果很好。
+
+下图为低分辨率下的抖动过渡，可以看出其棋盘状的阴影。
+
+<div align=center>
+
+![20230204224855](https://raw.githubusercontent.com/recaeee/PicGo/main/20230204224855.png)
+
+</div>
+
+#### 4.9 剔除偏移 Culling Bias
+
+对于一个ShadowCaster，它可能被渲染到多个级联图上，但大部分时候，对于一个ShaderCaster的物体，可能只会采样到一个级联图上。这就导致了ShadowCaster多余的被多次渲染。因此，Unity原生提供了级联剔除功能，对于那些不会永远被当前级联图采样的ShadowCaster进行剔除，不对其进行渲染。其提供了可配置的剔除范围参数splitData.shadowCascadeBlendCullingFactor，参考官方API，其为应用于Culling Sphere半径的系数，范围[0,1]，其值越小，Unity剔除的对象越多，级联共享的渲染对象越多。考虑到需要让不同级联交界处的物体不能被剔除，将其值设置为与cascadeFade相关的保守的一个数值。以下给出原教程的效果图（左图值为0，右图值为1），我自己实验出来没剔除多少。
+
+<div align=center>
+
+![20230204230836](https://raw.githubusercontent.com/recaeee/PicGo/main/20230204230836.png)
+
+</div>
+
+#### 5 透明物体 Transparency
+
+目前，只有Clip模式的透明物体会被正确地渲染阴影，而Blend模式会被当作Opaque物体一样渲染阴影。
+
+#### 5.1 阴影模式 Shadow Modes
+
+我们一共需要4种阴影模式，分别为On、Clip、Dither、Off。在Lit.shader的阴影Pass中增加对应关键字的定义，并在预设中设置对应值，后续会在阴影Pass中使用这些关键字。
+
+#### 5.2 裁剪阴影 Clipped Shadows
+
+对于阴影模式的关键字，使用的关键字定义为#pragma shader_feature _ _SHADOWS_CLIP _SHADOWS_DITHER。在ShadowCasterPassFragment中，对于_SHADOWS_CLIP启用clip裁剪片元。
+
+#### 5.3 抖动阴影 Dithered Shadows
+
+对于_SHADOWS_DITHER，让片元的alpha值与根据物体坐标得到的抖动值进行比较来clip，得到抖动的阴影结果，类似透明物体的棋盘算法，具体可参考[毛星云大佬《【《Real-Time Rendering 3rd》 提炼总结】(四) 第五章 · 图形渲染与视觉外观 The Visual Appearance》](https://zhuanlan.zhihu.com/p/27234482)，配合PCF可以得到比较好的阴影效果，但是该算法不支持重叠的多个透明物体的阴影效果，以及对动态场景支持效果较差。因此对于半透明物体，通常使用Clip或者Off。
+
+以下为Dither配合PCF7x7的阴影效果。
+
+<div align=center>
+
+![20230204235452](https://raw.githubusercontent.com/recaeee/PicGo/main/20230204235452.png)
+
+</div>
+
+#### 5.4 无阴影 No Shadows
+
+在这一节，通过编辑器拓展实现了材质的批量开关ShadowCasterPass。开关Pass使用m.SetShaderPassEnabled("ShadowCaster", enabled)。
+
+#### 5.5 无光照阴影投射器 Unlit Shadow Casters
+
+直接将ShadowCaster Pass复制到Unlit.shader，并且增加_Shadows Property。
+
+#### 5.6 接收阴影 Receiving Shadows
+
+在光照Pass中增加_RECEIVE_SHADOWS关键字，当它启用时，将阴影衰减值设置为1返回，达到不接收阴影的效果。
+
+#### 结束语
+
+这一章应该算最后一篇半长篇吧，主要是考虑了篇幅与毕设进度，后续章节会考虑以本节后半章的形式简写或者进行提炼，如需具体代码的详细注释可查看我的Github工程。终于又写完了一章，后面可能考虑开始同步进行一些风格化渲染的尝试。这几天也一直在看毛星云的文章，感叹真是国内图形学的明灯啊，可惜。
+
 #### 参考
 
 1. https://www.bilibili.com/video/BV1X7411F744/?spm_id_from=333.999.0.0
@@ -1031,3 +1151,5 @@ float FadedShadowStrength(float distance,float scale,float fade)
 7. https://docs.unity3d.com/cn/current/Manual/SL-SamplerStates.html
 8. https://zhuanlan.zhihu.com/p/545056819
 9. https://docs.unity3d.com/cn/2021.3/Manual/shadow-cascades.html
+10. https://zhuanlan.zhihu.com/p/498067785
+11. https://zhuanlan.zhihu.com/p/27234482

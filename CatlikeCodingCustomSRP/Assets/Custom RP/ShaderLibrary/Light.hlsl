@@ -31,7 +31,7 @@ int GetDirectionalLightCount()
     return _DirectionalLightCount;
 }
 
-//对于每个片元，构造光源的ShadowData
+//根据光源索引和当前级联信息，对于每个片元，构造光源的ShadowData
 DirectionalShadowData GetDirectionalShadowData(int lightIndex, ShadowData shadowData)
 {
     DirectionalShadowData data;
@@ -39,6 +39,8 @@ DirectionalShadowData GetDirectionalShadowData(int lightIndex, ShadowData shadow
     data.strength = _DirectionalLightShadowData[lightIndex].x * shadowData.strength;;
     //Tile索引
     data.tileIndex = _DirectionalLightShadowData[lightIndex].y + shadowData.cascadeIndex;
+    //阴影法线偏移系数
+    data.normalBias = _DirectionalLightShadowData[lightIndex].z;
     return data;
 }
 
@@ -52,7 +54,7 @@ Light GetDirectionalLight(int index, Surface surfaceWS, ShadowData shadowData)
     //构造光源阴影信息
     DirectionalShadowData dirShadowData = GetDirectionalShadowData(index, shadowData);
     //计算片元对应的光源衰减度
-    light.attenuation = GetDirectionalShadowAttenuation(dirShadowData, surfaceWS);
+    light.attenuation = GetDirectionalShadowAttenuation(dirShadowData, shadowData, surfaceWS);
     // light.attenuation = shadowData.cascadeIndex * 0.25;
     return light;
 }

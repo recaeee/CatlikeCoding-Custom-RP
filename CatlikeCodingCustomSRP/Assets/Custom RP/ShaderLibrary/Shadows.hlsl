@@ -1,7 +1,21 @@
-//用来采样阴影贴图
+//用来在Lit中采样阴影贴图
 #ifndef CUSTOM_SHADOWS_INCLUDED
 #define CUSTOM_SHADOWS_INCLUDED
 
+//使用Core RP的软阴影采样函数
+#include "Packages/com.unity.render-pipelines.core/ShaderLibrary//Shadow/ShadowSamplingTent.hlsl"
+
+#if defined(_DIRECTIONAL_PCF3)
+    //对于3x3模式，采样4次2x2模式
+    #define DIRECTIONAL_FILTER_SAMPLES 4
+    #define DIRECTIONAL_FILTER_SETUP SampleShadow_ComputeSamples_Tent_3x3
+#elif defined(_DIRECTIONAL_PCF5)
+    #define DIRECTIONAL_FILTER_SAMPLES 9
+    #define DIRECTIONAL_FILTER_SETUP SampleShadow_ComputeSamples_Tent_5x5
+#elif defined(_DIRECTIONAL_PCF7)
+    #define DIRECTIONAL_FILTER_SAMPLES 16
+    #define DIRECTIONAL_FILTER_SETUP SampleShadow_ComputeSamples_Tent_7x7
+#endif
 //宏定义最大支持阴影的方向光源数，要与CPU端同步，为4
 #define MAX_SHADOWED_DIRECTIONAL_LIGHT_COUNT 4
 //宏定义最大级联数为4
@@ -22,8 +36,12 @@ CBUFFER_START(_CustomShadows)
     int _CascadeCount;
     //最多4个级联球信息
     float4 _CascadeCullingSpheres[MAX_CASCADE_COUNT];
+    //每个级联的信息
+    float4 _CascadeData[MAX_CASCADE_COUNT];
     //接收CPU端传来的每个Shadow Tile(级联）的阴影变换矩阵
     float4x4 _DirectionalShadowMatrices[MAX_SHADOWED_DIRECTIONAL_LIGHT_COUNT * MAX_CASCADE_COUNT];
+    //PCF需要的阴影贴图信息
+    float4 _ShadowAtlasSize;
     //Vector2(最大阴影距离,渐变距离比例）
     float4 _ShadowDistanceFade;
 CBUFFER_END
@@ -33,36 +51,17 @@ struct DirectionalShadowData
 {
     float strength;
     int tileIndex;
+    //阴影法线偏移的系数
+    float normalBias;
 };
-
-//采样ShadowAtlas，传入positionSTS（STS是Shadow Tile Space，即阴影贴图对应Tile像素空间下的片元坐标）
-float SampleDirectionalShadowAtlas(float3 positionSTS)
-{
-    //使用特定宏来采样阴影贴图
-    return SAMPLE_TEXTURE2D_SHADOW(_DirectionalShadowAtlas,SHADOW_SAMPLER,positionSTS);
-}
-
-//计算阴影衰减值，返回值[0,1]，0代表阴影衰减最大（片元完全在阴影中），1代表阴影衰减最少，片元完全被光照射。而[0,1]的中间值代表片元有一部分在阴影中
-float GetDirectionalShadowAttenuation(DirectionalShadowData data, Surface surfaceWS)
-{
-    //忽略不开启阴影和阴影强度为0的光源
-    if(data.strength <= 0.0)
-    {
-        return 1.0;
-    }
-    //根据对应Tile阴影变换矩阵和片元的世界坐标计算Tile上的像素坐标STS
-    float3 positionSTS = mul(_DirectionalShadowMatrices[data.tileIndex], float4(surfaceWS.position,1.0)).xyz;
-    //采样Tile得到阴影强度值
-    float shadow = SampleDirectionalShadowAtlas(positionSTS);
-    //考虑光源的阴影强度，strength为0，依然没有阴影
-    return lerp(1.0,shadow,data.strength);
-}
 
 //定义每个片元（world space surface)的级联信息
 struct ShadowData
 {
     //当前片元使用的级联索引
     int cascadeIndex;
+    //级联混合插值
+    float cascadeBlend;
     //级联阴影的强度，0阴影最淡消失，1阴影完全存在，用来控制不同距离级联阴影过渡
     float strength;
 };
@@ -84,6 +83,8 @@ float FadedShadowStrength(float distance,float scale,float fade)
 ShadowData GetShadowData(Surface surfaceWS)
 {
     ShadowData data;
+    //默认级联混合插值为1，表示完全使用当前级联
+    data.cascadeBlend = 1.0;
     data.strength = FadedShadowStrength(surfaceWS.depth,_ShadowDistanceFade.x,_ShadowDistanceFade.y);
     // data.strength = 1;
     int i;
@@ -93,10 +94,15 @@ ShadowData GetShadowData(Surface surfaceWS)
         float distanceSqr = DistanceSquared(surfaceWS.position,sphere.xyz);
         if(distanceSqr < sphere.w)
         {
+            float fade = FadedShadowStrength(distanceSqr, _CascadeData[i].x, _ShadowDistanceFade.z);
             //对最大级联处做特殊的过渡
             if(i==_CascadeCount - 1)
             {
-                data.strength *= FadedShadowStrength(distanceSqr, 1.0 / sphere.w, _ShadowDistanceFade.z);
+                data.strength *= fade;
+            }
+            else
+            {
+                data.cascadeBlend = fade;
             }
             break;
         }
@@ -105,8 +111,82 @@ ShadowData GetShadowData(Surface surfaceWS)
     {
         data.strength = 0.0;
     }
+    #if defined(_CASCADE_BLEND_DITHER)
+        //不在最后一级抖动
+        //对于过渡处的片元做抖动，让不同片元抖动到不同级联等级上采样，类似于早期透明混合的棋盘算法吧，抖动算法配合后处理的AA效果很好
+        else if (data.cascadeBlend < surfaceWS.dither)
+        {
+            i += 1;
+        }
+    #endif
+    //在未定义软阴影过渡时，Blend设为1，不采样多个级联图
+    #if !defined(_CASCADE_BLEND_SOFT)
+        data.cascadeBlend = 1.0;
+    #endif
     data.cascadeIndex = i;
     return data;
 }
+
+//采样ShadowAtlas，传入positionSTS（STS是Shadow Tile Space，即阴影贴图对应Tile像素空间下的片元坐标）
+float SampleDirectionalShadowAtlas(float3 positionSTS)
+{
+    //使用特定宏来采样阴影贴图
+    return SAMPLE_TEXTURE2D_SHADOW(_DirectionalShadowAtlas,SHADOW_SAMPLER,positionSTS);
+}
+
+//使用PCF采样软阴影
+float FilterDirectionalShadow(float3 positionSTS)
+{
+    #if defined(DIRECTIONAL_FILTER_SETUP)
+        //out:每个采样结果的权重
+        float weights[DIRECTIONAL_FILTER_SAMPLES];
+        //out:每个采样的坐标
+        float2 positions[DIRECTIONAL_FILTER_SAMPLES];
+        //in：texelSizeX,texelSizeY,AtlasSizeX,AtlasSizeY
+        float4 size = _ShadowAtlasSize.yyxx;
+        //获取所有待采样点的坐标和权重
+        DIRECTIONAL_FILTER_SETUP(size,positionSTS.xy,weights,positions);
+        float shadow = 0;
+        //采样并加权
+        for(int i=0;i<DIRECTIONAL_FILTER_SAMPLES;i++)
+        {
+            shadow += weights[i] * SampleDirectionalShadowAtlas(float3(positions[i].xy,positionSTS.z));
+        }
+        return shadow;
+    #else
+        return SampleDirectionalShadowAtlas(positionSTS);
+    #endif
+}
+
+//计算阴影衰减值，返回值[0,1]，0代表阴影衰减最大（片元完全在阴影中），1代表阴影衰减最少，片元完全被光照射。而[0,1]的中间值代表片元有一部分在阴影中
+float GetDirectionalShadowAttenuation(DirectionalShadowData directional, ShadowData global, Surface surfaceWS)
+{
+    //考虑不接受阴影
+    #if !defined(_RECEIVE_SHADOWS)
+        return 1.0;
+    #endif
+    //忽略不开启阴影和阴影强度为0的光源
+    if(directional.strength <= 0.0)
+    {
+        return 1.0;
+    }
+    //计算法线偏移
+    float3 normalBias = surfaceWS.normal * (directional.normalBias * _CascadeData[global.cascadeIndex].y);
+    //根据对应Tile阴影变换矩阵和(经过法线偏移后)片元的世界坐标计算Tile上的像素坐标STS
+    float3 positionSTS = mul(_DirectionalShadowMatrices[directional.tileIndex], float4(surfaceWS.position+normalBias,1.0)).xyz;
+    //采样Tile得到阴影强度值
+    float shadow = FilterDirectionalShadow(positionSTS);
+    //考虑级联混合，采样下一级别的级联并混合而得到阴影强度值
+    if(global.cascadeBlend < 1.0)
+    {
+        normalBias = surfaceWS.normal * (directional.normalBias * _CascadeData[global.cascadeIndex + 1].y);
+        positionSTS = mul(_DirectionalShadowMatrices[directional.tileIndex + 1],float4(surfaceWS.position + normalBias,1.0)).xyz;
+        shadow = lerp(FilterDirectionalShadow(positionSTS),shadow,global.cascadeBlend);
+    }
+    //考虑光源的阴影强度，strength为0，依然没有阴影
+    return lerp(1.0,shadow,directional.strength);
+}
+
+
 
 #endif
