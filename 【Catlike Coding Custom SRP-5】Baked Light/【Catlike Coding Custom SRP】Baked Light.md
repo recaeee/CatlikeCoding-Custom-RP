@@ -44,11 +44,18 @@
 
 我们要做的第一件事是为场景中的静态对象烘培光照贴图。
 
-对于每一个Scene，其都有自身的全局光照配置。我使用的Unity 2021版本将Lighting Settings又构造成了Asset，更方便地用于配置。
+对于每一个Scene，其都有自身的全局光照配置。我使用的Unity 2021版本将**Lighting Settings**又构造成了Asset，更方便地用于配置，如下图所示。
+
+<div align=center>
+
+![20230207225344](https://raw.githubusercontent.com/recaeee/PicGo/main/20230207225344.png)
+
+
+</div>
 
 具体如何配置就不展开了，无论是看原教程还是官方文档都可以快速了解到每个属性的具体意义和用法。
 
-在Lighting Settings中，我们将Directional Mode设置为Non-Directional模式，意味着在烘培光照贴图时不考虑物体的法线贴图（目前我们的管线也不支持法线贴图），Lighting视图如下图所示。
+在Lighting Settings中，我们将Directional Mode设置为**Non-Directional**模式，意味着在烘培光照贴图时不考虑物体的法线贴图（目前我们的管线也不支持法线贴图），Lighting视图如下图所示。
 
 <div align=center>
 
@@ -57,6 +64,40 @@
 </div>
 
 #### 1.2 静态对象 Static Objects
+
+为了直观地观察GI的效果，在场景中，我摆放了一些物体，如下图所示(此时并未使用GI)。
+
+<div align=center>
+
+![20230207233027](https://raw.githubusercontent.com/recaeee/PicGo/main/20230207233027.png)
+
+</div>
+
+第一步，将光源Light组件上的Mode设置为Mixed，**Mixed意味着该光源会作为实时光源在运行时加入渲染计算，也会在非运行时为GI烘培间接光照的光照贴图**。
+
+第二步，将场景中的静态物体的MeshRenderer组件中开启Contribute Global Illumination，意味着**在GI系统计算时这些物体表面接收到的光线会被烘培到光照贴图中**。
+
+接下来，自动或手动开始烘培，得到烘培好的光照贴图如下图所示。
+
+<div align=center>
+
+![20230207233915](https://raw.githubusercontent.com/recaeee/PicGo/main/20230207233915.png)
+
+</div>
+
+GI会为当前场景生成一张光照贴图，这张光照贴图中**存储了参与GI的光源所造成的间接光照信息**，它是场景中所有参与GI的物体共有的，每个物体表面在光照贴图上都占有其自身的一块UV。该光照贴图目前几乎只包括了蓝色，是因为**GI计算出的间接光照颜色大部分都受天空盒的蓝色环境光影响**（Mixed模式的方向光源也参与了GI计算，其间接光照信息被烘培了下来，但由于其颜色接近纯白，在光照贴图中难以察觉）。
+
+#### 1.3 完全烘培的光照 Fully-Baked Light
+
+将方向光源设置成Baked模式，意味着该光源不再参与实时光照计算，只参与GI计算，但**在Baked模式中，光源带来的直接光照信息也会被烘培到光照贴图中**。如下图所示，我将方向光源颜色暂时设置为纯红色，并且设置为Baked模式，光照贴图变亮且变红，其直接光照信息被烘培到了光照贴图中。
+
+<div align=center>
+
+![20230207235251](https://raw.githubusercontent.com/recaeee/PicGo/main/20230207235251.png)
+
+</div>
+
+#### 2 采样烘培光照信息 Sampling Baked Light
 
 
 
