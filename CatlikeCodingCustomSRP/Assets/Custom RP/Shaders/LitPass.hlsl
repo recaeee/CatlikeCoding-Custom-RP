@@ -6,6 +6,7 @@
 #include "../ShaderLibrary/Shadows.hlsl"
 #include "../ShaderLibrary/Light.hlsl"
 #include "../ShaderLibrary/BRDF.hlsl"
+#include "../ShaderLibrary/GI.hlsl"
 #include "../ShaderLibrary/Lighting.hlsl"
 
 //使用Core RP Library的CBUFFER宏指令包裹材质属性，让Shader支持SRP Batcher，同时在不支持SRP Batcher的平台自动关闭它。
@@ -39,6 +40,8 @@ struct Attributes
     //顶点法线信息，用于光照计算，OS代表Object Space，即模型空间
     float3 normalOS:NORMAL;
     float2 baseUV:TEXCOORD0;
+    //使用宏定义光照贴图信息
+    GI_ATTRIBUTE_DATA
     //定义GPU Instancing使用的每个实例的ID，告诉GPU当前绘制的是哪个Object
     UNITY_VERTEX_INPUT_INSTANCE_ID
 };
@@ -52,6 +55,8 @@ struct Varyings
     //世界空间下的法线信息
     float3 normalWS:VAR_NORMAL;
     float2 baseUV:VAR_BASE_UV;
+    //接收顶点光照贴图信息
+    GI_VARYINGS_DATA
     //定义每一个片元对应的object的唯一ID
     UNITY_VERTEX_INPUT_INSTANCE_ID
 };
@@ -63,6 +68,8 @@ Varyings LitPassVertex(Attributes input)
     UNITY_SETUP_INSTANCE_ID(input);
     //将实例ID传递给output
     UNITY_TRANSFER_INSTANCE_ID(input,output);
+    //将顶点的光照贴图信息传递给output
+    TRANSFER_GI_DATA(input,output);
     output.positionWS = TransformObjectToWorld(input.positionOS);
     output.positionCS = TransformWorldToHClip(output.positionWS);
     //使用TransformObjectToWorldNormal将法线从模型空间转换到世界空间，注意不能使用TransformObjectToWorld
@@ -107,7 +114,9 @@ float4 LitPassFragment(Varyings input) : SV_TARGET
     #else
         BRDF brdf = GetBRDF(surface);
     #endif
-    float3 color = GetLighting(surface,brdf);
+    //传入宏定义的片元GI信息，得到烘培好的GI光照结果
+    GI gi = GetGI(GI_FRAGMENT_DATA(input));
+    float3 color = GetLighting(surface,brdf,gi);
     
     return float4(color,surface.alpha);
 }

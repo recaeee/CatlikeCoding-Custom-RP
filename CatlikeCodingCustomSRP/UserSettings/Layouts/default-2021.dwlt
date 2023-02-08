@@ -43,8 +43,8 @@ MonoBehaviour:
     y: 501
     width: 337
     height: 446
-  m_MinSize: {x: 102, y: 121}
-  m_MaxSize: {x: 4002, y: 4021}
+  m_MinSize: {x: 100, y: 100}
+  m_MaxSize: {x: 4000, y: 4000}
   m_ActualView: {fileID: 14}
   m_Panes:
   - {fileID: 14}
@@ -74,7 +74,7 @@ MonoBehaviour:
   m_MinSize: {x: 100, y: 200}
   m_MaxSize: {x: 8096, y: 16192}
   vertical: 1
-  controlID: 16
+  controlID: 38
 --- !u!114 &4
 MonoBehaviour:
   m_ObjectHideFlags: 52
@@ -151,7 +151,7 @@ MonoBehaviour:
   m_MinSize: {x: 400, y: 200}
   m_MaxSize: {x: 32384, y: 16192}
   vertical: 0
-  controlID: 100
+  controlID: 80
 --- !u!114 &7
 MonoBehaviour:
   m_ObjectHideFlags: 52
@@ -197,7 +197,7 @@ MonoBehaviour:
   m_MinSize: {x: 100, y: 200}
   m_MaxSize: {x: 8096, y: 16192}
   vertical: 1
-  controlID: 101
+  controlID: 141
 --- !u!114 &9
 MonoBehaviour:
   m_ObjectHideFlags: 52
@@ -387,23 +387,23 @@ MonoBehaviour:
   m_SceneHierarchy:
     m_TreeViewState:
       scrollPos: {x: 0, y: 0}
-      m_SelectedIDs: f8530000
-      m_LastClickedID: 21496
-      m_ExpandedIDs: c0b7ffff34fbffff
+      m_SelectedIDs: 76540000
+      m_LastClickedID: 21622
+      m_ExpandedIDs: 34fbffff
       m_RenameOverlay:
         m_UserAcceptedRename: 0
-        m_Name: Cube (1)
-        m_OriginalName: Cube (1)
+        m_Name: 
+        m_OriginalName: 
         m_EditFieldRect:
           serializedVersion: 2
           x: 0
           y: 0
           width: 0
           height: 0
-        m_UserData: -4462
+        m_UserData: 0
         m_IsWaitingForDelay: 0
         m_IsRenaming: 0
-        m_OriginalEventType: 0
+        m_OriginalEventType: 11
         m_IsRenamingFilename: 0
         m_ClientGUIView: {fileID: 9}
       m_SearchString: 
@@ -495,22 +495,22 @@ MonoBehaviour:
     m_SkipHidden: 0
     m_SearchArea: 1
     m_Folders:
-    - Assets/Custom RP/BakedLight
+    - Assets/Custom RP/Shaders
     m_Globs: []
     m_OriginalText: 
   m_ViewMode: 1
   m_StartGridSize: 16
   m_LastFolders:
-  - Assets/Custom RP/BakedLight
+  - Assets/Custom RP/Shaders
   m_LastFoldersGridSize: 16
   m_LastProjectPath: "D:\\\u96E8\u68EE\u4F01\u5212\\CatlikeCoding-Custom-RP\\CatlikeCodingCustomSRP"
   m_LockTracker:
     m_IsLocked: 0
   m_FolderTreeState:
     scrollPos: {x: 0, y: 0}
-    m_SelectedIDs: 3e540000
-    m_LastClickedID: 21566
-    m_ExpandedIDs: 000000002e540000305400003254000000ca9a3bffffff7f
+    m_SelectedIDs: b0550000
+    m_LastClickedID: 21936
+    m_ExpandedIDs: 0000000092550000945500009655000000ca9a3bffffff7f
     m_RenameOverlay:
       m_UserAcceptedRename: 0
       m_Name: 
@@ -538,7 +538,7 @@ MonoBehaviour:
     scrollPos: {x: 0, y: 0}
     m_SelectedIDs: 
     m_LastClickedID: 0
-    m_ExpandedIDs: 000000002e5400003054000032540000
+    m_ExpandedIDs: 00000000925500009455000096550000
     m_RenameOverlay:
       m_UserAcceptedRename: 0
       m_Name: 
@@ -569,15 +569,15 @@ MonoBehaviour:
     m_ExpandedInstanceIDs: 00000000
     m_RenameOverlay:
       m_UserAcceptedRename: 0
-      m_Name: shaderBall
-      m_OriginalName: shaderBall
+      m_Name: GI
+      m_OriginalName: GI
       m_EditFieldRect:
         serializedVersion: 2
         x: 0
         y: 0
         width: 0
         height: 0
-      m_UserData: 21846
+      m_UserData: 21996
       m_IsWaitingForDelay: 0
       m_IsRenaming: 0
       m_OriginalEventType: 0
@@ -911,9 +911,9 @@ MonoBehaviour:
   m_PlayAudio: 0
   m_AudioPlay: 0
   m_Position:
-    m_Target: {x: 0.1133112, y: 1.4998428, z: -3.6865869}
+    m_Target: {x: -0.33222014, y: 1.2311748, z: -3.520452}
     speed: 2
-    m_Value: {x: 0.1133112, y: 1.4998428, z: -3.6865869}
+    m_Value: {x: -0.33222014, y: 1.2311748, z: -3.520452}
   m_RenderMode: 0
   m_CameraMode:
     drawMode: 0
@@ -960,13 +960,13 @@ MonoBehaviour:
     m_GridAxis: 1
     m_gridOpacity: 0.5
   m_Rotation:
-    m_Target: {x: -0.14972329, y: 0.008048732, z: -0.0009197187, w: -0.98857594}
+    m_Target: {x: -0.13190614, y: 0.0065781996, z: -0.0005698296, w: -0.99111754}
     speed: 2
-    m_Value: {x: -0.14973934, y: 0.009532706, z: -0.001144437, w: -0.98867893}
+    m_Value: {x: -0.13340889, y: 0.006578138, z: -0.000579762, w: -0.9910391}
   m_Size:
     m_Target: 0.8660254
     speed: 2
-    m_Value: 10
+    m_Value: 0.8660254
   m_Ortho:
     m_Target: 0
     speed: 2

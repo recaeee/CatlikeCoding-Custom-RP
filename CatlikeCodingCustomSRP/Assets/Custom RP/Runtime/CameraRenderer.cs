@@ -86,7 +86,9 @@ public partial class CameraRenderer
         {
             //启用动态批处理
             enableDynamicBatching = useDynamicBatching,
-            enableInstancing = useGPUInstancing
+            enableInstancing = useGPUInstancing,
+            //传递场景中所有参与GI的物体在光照贴图上的UV
+            perObjectData = PerObjectData.Lightmaps
         };
         //增加对Lit.shader的绘制支持,index代表本次DrawRenderer中该pass的绘制优先级（0最先绘制）
         drawingSettings.SetShaderPassName(1, litShaderTagId);//"LightMode"="CustomLit"

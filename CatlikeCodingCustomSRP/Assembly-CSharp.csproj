@@ -50,6 +50,7 @@
      <Compile Include="Assets\Custom RP\Runtime\Shadows.cs" />
      <Compile Include="Assets\Custom RP\Runtime\CameraRenderer.Editor.cs" />
      <Compile Include="Assets\Custom RP\Runtime\CustomRenderPipelineAsset.cs" />
+     <None Include="Assets\Custom RP\ShaderLibrary\GI.hlsl" />
      <None Include="Assets\Custom RP\Shaders\ShadowCasterPass.hlsl" />
      <None Include="Assets\Custom RP\ShaderLibrary\Light.hlsl" />
      <None Include="Assets\Custom RP\Shaders\Lit.shader" />

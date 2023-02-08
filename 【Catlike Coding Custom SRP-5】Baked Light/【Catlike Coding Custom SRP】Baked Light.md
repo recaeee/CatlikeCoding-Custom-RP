@@ -44,6 +44,10 @@
 
 我们要做的第一件事是为场景中的静态对象烘培光照贴图。
 
+首先，什么是光照贴图？
+
+光照贴图将预先计算好场景中表面的亮度，并将结果存储在其中，供以后使用。**光照贴图可以包含直接光和间接光**。
+
 对于每一个Scene，其都有自身的全局光照配置。我使用的Unity 2021版本将**Lighting Settings**又构造成了Asset，更方便地用于配置，如下图所示。
 
 <div align=center>
@@ -55,7 +59,25 @@
 
 具体如何配置就不展开了，无论是看原教程还是官方文档都可以快速了解到每个属性的具体意义和用法。
 
-在Lighting Settings中，我们将Directional Mode设置为**Non-Directional**模式，意味着在烘培光照贴图时不考虑物体的法线贴图（目前我们的管线也不支持法线贴图），Lighting视图如下图所示。
+在Lighting Settings中，**Mixed Lighting**用于烘培GI，将Lighting Mode设置为**Baked Indirect**。
+
+参考[《官方文档——Lighting Mode》](https://docs.unity3d.com/cn/2021.3/Manual/LightMode-Mixed-BakedIndirect.html)，在Baked Indirect模式下，混合模式的光源Mixed Light行为如下：
+
+对于混合光源照亮的**动态对象**，将接收到：
+1. 混合光源的实时直接光照。
+2. 根据**光照探针**得到的烘培间接光照。
+3. 阴影贴图上动态对象的阴影。
+4. 阴影贴图上静态对象的阴影。
+
+对于混合光照照亮的**静态对象**，将接收到：
+1. 实时直接光照。
+2. 根据**光照贴图**得到的烘培间接光照。
+3. 阴影贴图上动态对象的阴影。
+4. 阴影贴图上静态对象的阴影。
+
+可以看到，**混合光源的所有阴影在Baked Indirect光照模式下都是实时的**。
+
+另外，我们将Directional Mode设置为**Non-Directional**模式，意味着在烘培光照贴图时不考虑物体的法线贴图（目前我们的管线也不支持法线贴图），Lighting视图如下图所示。
 
 <div align=center>
 
@@ -85,7 +107,15 @@
 
 </div>
 
-GI会为当前场景生成一张光照贴图，这张光照贴图中**存储了参与GI的光源所造成的间接光照信息**，它是场景中所有参与GI的物体共有的，每个物体表面在光照贴图上都占有其自身的一块UV。该光照贴图目前几乎只包括了蓝色，是因为**GI计算出的间接光照颜色大部分都受天空盒的蓝色环境光影响**（Mixed模式的方向光源也参与了GI计算，其间接光照信息被烘培了下来，但由于其颜色接近纯白，在光照贴图中难以察觉）。
+GI会为当前场景生成一张光照贴图，这张光照贴图中**存储了参与GI的光源所造成的间接光照信息**，它是场景中所有参与GI的物体共有的，每个物体表面在光照贴图上都占有其自身的一块UV。该光照贴图目前几乎只包括了蓝色，是因为**GI计算出的间接光照颜色大部分都受天空盒的蓝色环境光影响**（天空盒的环境光可以看作来自四面八方的光线，Mixed模式的方向光源也参与了GI计算，其间接光照信息被烘培了下来，但由于其颜色接近纯白，在光照贴图中难以察觉）。
+
+**环境光Ambient Light**是场景周围存在的光，**并非来自任何特定的光源对象**。在Lighting视图中可以设置当前使用的环境光，可以看到当前Ambient Light源自天空盒。
+
+<div align=center>
+
+![20230208210842](https://raw.githubusercontent.com/recaeee/PicGo/main/20230208210842.png)
+
+</div>
 
 #### 1.3 完全烘培的光照 Fully-Baked Light
 
@@ -99,10 +129,67 @@ GI会为当前场景生成一张光照贴图，这张光照贴图中**存储了�
 
 #### 2 采样烘培光照信息 Sampling Baked Light
 
+我们将在这一节实现在Shader中采样光照贴图。
 
+#### 2.1 全局光照 Global Illumination
+
+Shader中具体实现部分不详细展开了，通过采样光照贴图，我们可以获取到片元的烘培间接光照结果，也就是片元接收到的间接光照能量。**对于这一部分间接光照能量，片元将完全以漫反射形式反射出去**。这一点是显而易见的，预计算的光照必然考虑不了摄像机的朝向，而高光Specular的计算需要根据摄像机朝向，漫反射Diffuse则是向任意方向反射相同的光能量。
+
+#### 2.2 光照贴图坐标 Light Map Coordinates
+
+在shader中，我们需要采样LightMap，因此需要在CPU端将每个物体在光照贴图上的UV信息传递给GPU。Unity封装好了传递光照贴图UV的方法与数据结构，相关Unity类：**DrawingSettings和PerObjectData**。
+
+**在启用光照贴图时，Unity会启用LIGHTMAP_ON的Shader关键字**，因此我们需要在Lit.shader中定义该关键字，并使用宏定义顶点着色器、片元着色器中的GI数据，以及GI的相关代码。这些代码都通过宏控制，因为只有在LIGHTMAP_ON启用时，这些GI相关代码才需要被编译。
+
+下图为将每个物体在光照贴图上的uv(float2)信息输出到像素的rg通道的结果。
+
+<div align=center>
+
+![20230208225026](https://raw.githubusercontent.com/recaeee/PicGo/main/20230208225026.png)
+
+</div>
+
+#### 2.3 变换光照贴图坐标 Transformed Light Map Coordinates
+
+我们传递给GPU的光照贴图包含了所有参与GI的物体，因此每个物体在光照贴图上都拥有其独一无二的UV区域。而GPU得到的每个顶点的光照贴图UV是未经过变换的，**我们需要通过UV展开获取到每个物体每个顶点在光照贴图上独一无二的UV坐标**。因此我们需要通过将定义UV展开方式的float4数据传递给GPU，并应用于顶点的lightmapUV。另外，光照贴图技术也可以作用于GPU Instancing。
+
+关于**UV展开**，可参考[《网格UV展开》](http://geometryhub.net/notes/uvunfold)，简单来说UV展开的作用是将三角网格与一个二维平面形成一一映射的关系，如下图所示，左边图为UV展开后的顶点坐标，右图为原Mesh，图片源自[《网格UV展开》](http://geometryhub.net/notes/uvunfold)。
+
+<div align=center>
+
+![20230208231455](https://raw.githubusercontent.com/recaeee/PicGo/main/20230208231455.png)
+
+</div>
+
+那对于整个场景中参与GI的物体的UV展开如何去做就很简单了，把整个场景中这些物体都当作一个Mesh就行了。
+
+应用光照贴图坐标变换后，每个片元都拥有了其自身正确的光照贴图UV，可视化效果图如下所示，每个片元的颜色都不同了。
+
+<div align=center>
+
+![20230208231741](https://raw.githubusercontent.com/recaeee/PicGo/main/20230208231741.png)
+
+</div>
+
+#### 2.4 采样光照贴图 Sampling the Light Map
+
+有了正确的光照贴图UV坐标，就可以采样光照贴图了。
+
+采样的过程很简单，不必多言，在shader中，CPU传来的光照贴图名为**unity_Lightmap**。采样中，使用了CoreRP中的EntityLighting.hlsl与其中的SampleSingleLightmap函数，在此不做过多展开。
+
+实现采样后，我们可以得到效果图如下。由于我们的方向光源为Baked模式，因此其直接光照也会被计算在光照贴图中，而不作用于实时光照。
+
+<div align=center>
+
+![20230208234638](https://raw.githubusercontent.com/recaeee/PicGo/main/20230208234638.png)
+
+</div>
+
+#### 2.5 关闭环境光 Disabling Environment Lighting
 
 #### 参考
 
 1. https://zhuanlan.zhihu.com/p/126362480
 2. https://docs.unity3d.com/cn/2018.2/Manual/GIIntro.html
-3. 所有涩图均来自wlop大大
+3. https://docs.unity3d.com/cn/2021.3/Manual/LightMode-Mixed-BakedIndirect.html
+4. 所有涩图均来自wlop大大
