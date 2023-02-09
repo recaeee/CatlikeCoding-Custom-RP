@@ -187,9 +187,42 @@ Shader中具体实现部分不详细展开了，通过采样光照贴图，我�
 
 #### 2.5 关闭环境光 Disabling Environment Lighting
 
+目前的GI计算考虑了方向光源与天空盒的环境光，为了只关注方向光源，在Lighing Settings中将环境光强度设置为0。效果图如下，可以看到，原本映射出蓝色的一些地方不再映射蓝色了，并且整体画面变暗了一些。
+
+<div align=center>
+
+![20230209230608](https://raw.githubusercontent.com/recaeee/PicGo/main/20230209230608.png)
+
+</div>
+
+#### 3 光照探针 Light Probes
+
+动态对象不参与GI计算，但它们可以通过光照探针被GI影响，也就是使用GI烘培结果估算其受到的间接光照。
+
+参考[《官方文档——光照探针》](https://docs.unity3d.com/cn/2021.3/Manual/LightProbes.html)，**光照探针可以捕获并使用穿过场景空白空间的光线的相关信息**。也就是说，当一个动态物体靠近这个光照探针，光照探针就会告诉它“朝你这个方向有什么样的光线射过来”，然后动态物体表面就可以得到间接光照效果。在运行时，系统将使用距离动态物体游戏对象最近的探针的值来估算照射到这些对象的间接光。
+
+光照探针中的照明信息被编码为**球谐函数**，实际使用为L2球谐函数，其使用27个浮点值存储，每个颜色通道9个。官方给出了[《GDC 2012 使用四面体曲面细分的光照探针插值》](https://gdcvault.com/play/1015312/Light-Probe-Interpolation-Using-Tetrahedral)作为其原理的参考。
+
+关于光照探针的简单原理可以参考[《再谈Unity中的光照探针技术》](https://zhuanlan.zhihu.com/p/439706412)。其主要使用了**四面体插值**，简单来说，在采样空间一个点的Radiance函数值时，找到其最近的由4个光照探针组成的四面体，如果该点在四面体内部，则根据类似**四面体下的重心坐标**的算法求出4个光照探针的系数，通过这4个系数与光照探针内部存储光照值**插值**得到该点的间接光照。如果该点在四面体外部，则将该点沿四面体顶点法线方向投影到四面体上，再进行计算。
+
+下图为截取自[GDC PDF](https://zhuanlan.zhihu.com/p/439706412)中的**四面体插值示意图**，P0、P1、P2、P3构成了一个四面体，P在四面体中，其中P = aP0 + bP1 + cP2 + dP3。下图中还包括了a、b、c、d四个值的计算公式，这四个值就是用来对四个光照探针的信息插值的。
+
+<div align=center>
+
+![20230209233803](https://raw.githubusercontent.com/recaeee/PicGo/main/20230209233803.png)
+
+</div>
+
+#### 3.1 光照探针组
+
+
+
 #### 参考
 
 1. https://zhuanlan.zhihu.com/p/126362480
 2. https://docs.unity3d.com/cn/2018.2/Manual/GIIntro.html
 3. https://docs.unity3d.com/cn/2021.3/Manual/LightMode-Mixed-BakedIndirect.html
-4. 所有涩图均来自wlop大大
+4. https://docs.unity3d.com/cn/2021.3/Manual/LightProbes.html
+5. https://gdcvault.com/play/1015312/Light-Probe-Interpolation-Using-Tetrahedral
+6. https://zhuanlan.zhihu.com/p/439706412
+7. 所有涩图均来自wlop大大
