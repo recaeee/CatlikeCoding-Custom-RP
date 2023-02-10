@@ -9,6 +9,10 @@
 TEXTURE2D(unity_Lightmap);
 SAMPLER(samplerunity_Lightmap);
 
+//LPPV的3D纹理
+TEXTURE3D_FLOAT(unity_ProbeVolumeSH);
+SAMPLER(sampler_unity_ProbeVolumeSH);
+
 //使用宏定义GI数据和相关函数
 #if defined(LIGHTMAP_ON)
     //顶点光照贴图UV信息从第二个TEXCOORD通道提供，第一个通道提供顶点baseUV
@@ -54,12 +58,46 @@ float3 SampleLightMap(float2 lightMapUV)
     #endif
 }
 
-//得到片元的GI结果，传入当前片元在光照贴图上的UV
-GI GetGI(float2 lightMapUV)
+//采样光照探针
+float3 SampleLightProbe(Surface surfaceWS)
+{
+    #if defined(LIGHTMAP_ON)
+        return 0.0;
+    #else
+        if(unity_ProbeVolumeParams.x)
+        {
+            //采样LPPVs,具体函数不深入
+            return SampleProbeVolumeSH4(TEXTURE3D_ARGS(unity_ProbeVolumeSH,sampler_unity_ProbeVolumeSH),
+                surfaceWS.position, surfaceWS.normal,
+                unity_ProbeVolumeWorldToObject,
+                unity_ProbeVolumeParams.y, unity_ProbeVolumeParams.z,
+                unity_ProbeVolumeMin.xyz, unity_ProbeVolumeSizeInv.xyz);
+        }
+        else
+        {
+            //采样单个插值光照探针
+            float4 coefficients[7];
+            coefficients[0]=unity_SHAr;
+            coefficients[1]=unity_SHAg;
+            coefficients[2]=untiy_SHAb;
+            coefficients[3]=unity_SHBr;
+            coefficients[4]=unity_SHBg;
+            coefficients[5]=unity_SHBb;
+            coefficients[6]=unity_SHC;
+            //四面体插值采样，SH : Spherical Harmonics
+            return max(0.0,SampleSH9(coefficients,surfaceWS.normal));
+        }
+    #endif
+}
+
+//得到片元的GI结果，传入当前片元在光照贴图上的UV，传入表面片元
+GI GetGI(float2 lightMapUV, Surface surfaceWS)
 {
     GI gi;
     //采样光照贴图作为表面片元接收到GI上的diffuse光照
-    gi.diffuse = SampleLightMap(lightMapUV);
+    //采样光照探针作为表面片元接收到GI上的diffuse光照
+    //两者只得一
+    gi.diffuse = SampleLightMap(lightMapUV) + SampleLightProbe(surfaceWS);
     return gi;
 }
 #endif
