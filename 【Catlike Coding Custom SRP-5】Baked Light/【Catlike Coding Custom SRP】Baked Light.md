@@ -293,7 +293,9 @@ Shader中具体实现部分不详细展开了，通过采样光照贴图，我�
 
 #### 4 元通道 Meta Pass
 
-目前我们烘培得到的间接光照，默认所有静态物体都是纯白色的，意味着静态物体表面完全不吸收任何漫反射能量，将接收到的光能量100%地反射出去。但是物体具有Diffuse属性，意味着物体将会吸收掉一部分光能量，由此反射出的间接光RGB会变化，Unity通过Meta Pass来考虑烘培GI时物体的Diffuse属性。
+目前我们烘培得到的间接光照，默认所有静态物体都是纯白色的，意味着静态物体表面完全不吸收任何漫反射能量，将接收到的光能量100%地反射出去。但是物体具有Diffuse属性，意味着物体将会吸收掉一部分光能量，由此反射出的间接光RGB会变化，Unity通过**Meta Pass**来考虑烘培GI时物体的Diffuse属性。
+
+参考[《Unity官方文档——光照贴图和着色器》](https://docs.unity3d.com/cn/2021.3/Manual/MetaPass.html)，**Meta Pass是为全局光照系统提供反射率和自发光的Pass**。它使用的值是与实时渲染中使用的值是分开的，意味着可以使用Meta Pass做一些独立于运行时的光照烘培，比如用于夸装一块区域的间接光照。
 
 #### 4.1 Lit的输入 Unified Input
 
@@ -305,6 +307,26 @@ Shader中具体实现部分不详细展开了，通过采样光照贴图，我�
 
 #### 4.3 元光照模式 Meta Light Mode
 
+这一节在Shader中构建了Meta Pass的雏形，注意点在于需要关闭剔除，即使用**Cull Off**关键字，在其中，我们需要获取物体表面片元的**BRDF属性**。
+
+#### 4.4 光照贴图坐标 Light Map Coordinates
+
+由于我们需要将片元光照信息烘培到光照贴图中，因此我们需要知道物体表面片元在光照贴图中的坐标。因此在顶点着色器中，**需要将物体顶点转换到光照贴图上的对应UV位置**，即实现反向的UV展开。原教程中，这里比较晦涩，它把positionOS和positionCS直接拿来用了，但其值的含义并不是OS和CS下的顶点位置，而是UV位置。
+
+#### 4.5 漫反射反射率 Diffuse Reflectivity
+
+在这一节中，将片元的漫反射率作为片元着色器的输出，这样，就可以**让GI系统获取到烘培时使用的漫反射率**。其中，对间接光照使用的漫反射反射率进行了一定的修饰操作。对于将光能量更多以Specular形式反射但粗糙度较大的表面，也考虑其提供一定的间接光，这是挺有道理的，因为粗糙度大意味着其反射范围大，一定程度上性质接近diffuse。另外，还会对diffuse最终做一次power运算。
+
+在实现该Meta Pass后，我们得到了很不错的GI效果，其考虑了物体表面的Diffuse属性。
+
+<div align=center>
+
+![20230213235251](https://raw.githubusercontent.com/recaeee/PicGo/main/20230213235251.png)
+
+</div>
+
+#### 5 自发光表面 Emissive Surfaces
+
 #### 参考
 
 1. https://zhuanlan.zhihu.com/p/126362480
@@ -313,4 +335,5 @@ Shader中具体实现部分不详细展开了，通过采样光照贴图，我�
 4. https://docs.unity3d.com/cn/2021.3/Manual/LightProbes.html
 5. https://gdcvault.com/play/1015312/Light-Probe-Interpolation-Using-Tetrahedral
 6. https://zhuanlan.zhihu.com/p/439706412
-7. 所有涩图均来自wlop大大
+7. https://docs.unity3d.com/cn/2021.3/Manual/MetaPass.html
+8. 所有涩图均来自wlop大大

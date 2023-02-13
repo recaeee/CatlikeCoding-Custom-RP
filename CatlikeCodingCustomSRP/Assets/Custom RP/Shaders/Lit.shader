@@ -97,6 +97,90 @@ Shader "Custom RP/Lit"
             #include "ShadowCasterPass.hlsl"
             ENDHLSL
         }
+
+        //GI相关的Meta Pass(Meta Pass是为全局光照系统提供反射率和自发光的Pass)
+        Pass
+        {
+            Tags
+            {
+                "LightMode" = "Meta"
+            }
+            //关闭剔除
+            Cull Off
+
+            HLSLPROGRAM
+            #pragma target 3.5
+            #pragma vertex MetaPassVertex
+            #pragma fragment MetaPassFragment
+
+            #ifndef CUSTOM_META_PASS_INCLUDED
+            #define CUSTOM_META_PASS_INCLUDED
+
+            //为了获取BRDF.hlsl，需要编译其依赖代码
+            #include "../ShaderLibrary/Surface.hlsl"
+            #include "../ShaderLibrary/Shadows.hlsl"
+            #include "../ShaderLibrary/Light.hlsl"
+            #include "../ShaderLibrary/BRDF.hlsl"
+
+            struct Attributes
+            {
+                float3 positionOS:POSITION;
+                float2 baseUV:TEXCOORD0;
+                //片元对应光照贴图的坐标，需要烘培到该坐标对应像素
+                float2 lightMapUV:TEXCOORD1;
+            };
+
+            struct Varyings
+            {
+                float4 positionCS:SV_POSITION;
+                float2 baseUV:VAR_BASE_UV;
+            };
+
+            //用于控制metea Pass生成的数据
+            bool4 unity_MetaFragmentControl;
+            //提亮diffuse所用内置值
+            float unity_OneOverOutputBoost;
+            float unity_MaxOutputValue;
+
+            Varyings MetaPassVertex(Attributes input)
+            {
+                Varyings output;
+                //这里input.positionOS和CS不再代表模型、裁剪空间下顶点位置，而是代表顶点在UV坐标系下的位置
+                input.positionOS.xy = input.lightMapUV * unity_LightmapST.xy + unity_LightmapST.zw;
+                input.positionOS.z = input.positionOS.z > 0.0 ? FLT_MIN : 0.0;
+                output.positionCS = TransformWorldToHClip(input.positionOS);
+                output.baseUV = TransformBaseUV(input.baseUV);
+                return output;
+            }
+
+            float4 MetaPassFragment(Varyings input):SV_TARGET
+            {
+                //获取Diffuse
+                float4 base = GetBase(input.baseUV);
+                //构造Surface
+                Surface surface;
+                //将Surface中的所有数据成员初始化为0值
+                ZERO_INITIALIZE(Surface,surface);
+                surface.color = base.rgb;
+                surface.metallic = GetMetallic(input.baseUV);
+                surface.smoothness = GetSmoothness(input.baseUV);
+                BRDF brdf = GetBRDF(surface);
+                float4 meta = 0.0;
+                //x控制漫反射
+                if(unity_MetaFragmentControl.x)
+                {
+                    meta = float4(brdf.diffuse, 1.0);
+                    //高度反射specular并且高度粗糙的物体表面也提供部分间接光照
+                    meta.rgb += brdf.specular * brdf.roughness * 0.5;
+                    //再提升点亮度
+                    meta.rgb = min(PositivePow(meta.rgb, unity_OneOverOutputBoost), unity_MaxOutputValue);
+                }
+                return meta;
+            }
+            
+            #endif
+            ENDHLSL
+        }
     }
 
     //告诉Unity编辑器使用CustomShaderGUI类的一个实例来为使用Lit.shader的材质绘制Inspector窗口
