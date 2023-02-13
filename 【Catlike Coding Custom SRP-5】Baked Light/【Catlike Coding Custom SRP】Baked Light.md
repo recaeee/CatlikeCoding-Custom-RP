@@ -295,9 +295,15 @@ Shader中具体实现部分不详细展开了，通过采样光照贴图，我�
 
 目前我们烘培得到的间接光照，默认所有静态物体都是纯白色的，意味着静态物体表面完全不吸收任何漫反射能量，将接收到的光能量100%地反射出去。但是物体具有Diffuse属性，意味着物体将会吸收掉一部分光能量，由此反射出的间接光RGB会变化，Unity通过Meta Pass来考虑烘培GI时物体的Diffuse属性。
 
-#### 4.1 统一输入 Unified Input
+#### 4.1 Lit的输入 Unified Input
 
+在编写GI用的Meta Pass之前，先将Lit.Shader的所有Pass统一的Input整合成一个hlsl文件，放入SubShader标签下，意味着这段代码将加入到所有Pass的开头。
 
+#### 4.2 Unlit的统一输入 Unlit
+
+同上，为Unlit也整合一个UnlitInput.hlsl，可以看到两个shader的ShadowCasterPass接受了不同的input，但依然都能工作，可以看出Shader的代码就是拼拼装装。
+
+#### 4.3 元光照模式 Meta Light Mode
 
 #### 参考
 

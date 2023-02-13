@@ -34,6 +34,11 @@ Shader "Custom RP/Lit"
 
     SubShader
     {
+        //Meta Pass相关，需要加入所有Pass，所以放在SubShader标签下
+        HLSLINCLUDE
+        #include "../ShaderLibrary/Common.hlsl"
+        #include "LitInput.hlsl"
+        ENDHLSL
         Pass
         {
             //设置Pass Tags，最关键的Tag为"LightMode"

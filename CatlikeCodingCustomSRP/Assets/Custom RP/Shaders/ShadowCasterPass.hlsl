@@ -1,22 +1,6 @@
 #ifndef CUSTOM_SHADOW_CASTER_PASS_INCLUDED
 #define CUSTOM_SHADOW_CASTER_PASS_INCLUDED
 
-#include "../ShaderLibrary/Common.hlsl"
-
-//获取BaseMap用于Clip
-TEXTURE2D(_BaseMap);
-SAMPLER(sampler_BaseMap);
-
-//为了使用GPU Instancing，每实例数据要构建成数组,使用UNITY_INSTANCING_BUFFER_START(END)来包裹每实例数据
-UNITY_INSTANCING_BUFFER_START(UnityPerMaterial)
-    //纹理坐标的偏移和缩放可以是每实例数据
-    UNITY_DEFINE_INSTANCED_PROP(float4,_BaseMap_ST)
-    //_BaseColor在数组中的定义格式
-    UNITY_DEFINE_INSTANCED_PROP(float4,_BaseColor)
-    //透明度测试阈值
-    UNITY_DEFINE_INSTANCED_PROP(float,_Cutoff)
-UNITY_INSTANCING_BUFFER_END(UnityPerMaterial)
-
 //使用结构体定义顶点着色器的输入，一个是为了代码更整洁，一个是为了支持GPU Instancing（获取object的index）
 struct Attributes
 {
@@ -52,8 +36,7 @@ Varyings ShadowCasterPassVertex(Attributes input)
         output.positionCS.z = max(output.positionCS.z, output.positionCS.w * UNITY_NEAR_CLIP_VALUE);
     #endif
     //应用纹理ST变换
-    float4 baseST = UNITY_ACCESS_INSTANCED_PROP(UnityPerMaterial,_BaseMap_ST);
-    output.baseUV = input.baseUV * baseST.xy + baseST.zw;
+    output.baseUV = TransformBaseUV(input.baseUV);
     return output;
 }
 
@@ -62,15 +45,13 @@ void ShadowCasterPassFragment(Varyings input)
     //从input中提取实例的ID并将其存储在其他实例化宏所依赖的全局静态变量中
     UNITY_SETUP_INSTANCE_ID(input);
     //获取采样纹理颜色
-    float4 baseMap = SAMPLE_TEXTURE2D(_BaseMap,sampler_BaseMap,input.baseUV);
     //通过UNITY_ACCESS_INSTANCED_PROP获取每实例数据
-    float4 baseColor =  UNITY_ACCESS_INSTANCED_PROP(UnityPerMaterial, _BaseColor);
-    float4 base = baseMap * baseColor;
+    float4 base = GetBase(input.baseUV);
 
     //只有在_SHADOWS_CLIP关键字启用时编译该段代码
     #if defined(_SHADOWS_CLIP)
         //clip函数的传入参数如果<=0则会丢弃该片元
-        clip(base.a - UNITY_ACCESS_INSTANCED_PROP(UnityPerMaterial, _Cutoff));
+        clip(base.a - GetCutoff(input.baseUV));
     #elif defined(_SHADOWS_DITHER)
         //类似棋盘算法裁剪Blend透明模式物体的阴影
         float dither = InterleavedGradientNoise(input.positionCS.xy,0);

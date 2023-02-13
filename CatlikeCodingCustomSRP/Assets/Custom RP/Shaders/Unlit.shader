@@ -24,6 +24,10 @@ Shader "Custom RP/Unlit"
 
     SubShader
     {
+        HLSLINCLUDE
+        #include "../ShaderLibrary/Common.hlsl"
+        #include "UnlitInput.hlsl"
+        ENDHLSL
         Pass
         {
             //设置混合模式

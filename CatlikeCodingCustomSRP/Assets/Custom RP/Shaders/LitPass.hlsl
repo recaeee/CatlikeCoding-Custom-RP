@@ -1,7 +1,6 @@
 #ifndef CUSTOM_LIT_PASS_INCLUDED
 #define CUSTOM_LIT_PASS_INCLUDED
 
-#include "../ShaderLibrary/Common.hlsl"
 #include "../ShaderLibrary/Surface.hlsl"
 #include "../ShaderLibrary/Shadows.hlsl"
 #include "../ShaderLibrary/Light.hlsl"
@@ -14,24 +13,6 @@
 // CBUFFER_START(UnityPerMaterial)
 // float4 _BaseColor;
 // CBUFFER_END
-
-//在Shader的全局变量区定义纹理的句柄和其采样器，通过名字来匹配
-TEXTURE2D(_BaseMap);
-SAMPLER(sampler_BaseMap);
-
-//为了使用GPU Instancing，每实例数据要构建成数组,使用UNITY_INSTANCING_BUFFER_START(END)来包裹每实例数据
-UNITY_INSTANCING_BUFFER_START(UnityPerMaterial)
-    //纹理坐标的偏移和缩放可以是每实例数据
-    UNITY_DEFINE_INSTANCED_PROP(float4,_BaseMap_ST)
-    //_BaseColor在数组中的定义格式
-    UNITY_DEFINE_INSTANCED_PROP(float4,_BaseColor)
-    //透明度测试阈值
-    UNITY_DEFINE_INSTANCED_PROP(float,_Cutoff)
-    //金属度
-    UNITY_DEFINE_INSTANCED_PROP(float,_Metallic)
-    //光滑度
-    UNITY_DEFINE_INSTANCED_PROP(float,_Smoothness)
-UNITY_INSTANCING_BUFFER_END(UnityPerMaterial)
 
 //使用结构体定义顶点着色器的输入，一个是为了代码更整洁，一个是为了支持GPU Instancing（获取object的index）
 struct Attributes
@@ -75,8 +56,7 @@ Varyings LitPassVertex(Attributes input)
     //使用TransformObjectToWorldNormal将法线从模型空间转换到世界空间，注意不能使用TransformObjectToWorld
     output.normalWS = TransformObjectToWorldNormal(input.normalOS);
     //应用纹理ST变换
-    float4 baseST = UNITY_ACCESS_INSTANCED_PROP(UnityPerMaterial,_BaseMap_ST);
-    output.baseUV = input.baseUV * baseST.xy + baseST.zw;
+    output.baseUV = TransformBaseUV(input.baseUV);
     return output;
 }
 
@@ -85,15 +65,13 @@ float4 LitPassFragment(Varyings input) : SV_TARGET
     //从input中提取实例的ID并将其存储在其他实例化宏所依赖的全局静态变量中
     UNITY_SETUP_INSTANCE_ID(input);
     //获取采样纹理颜色
-    float4 baseMap = SAMPLE_TEXTURE2D(_BaseMap,sampler_BaseMap,input.baseUV);
     //通过UNITY_ACCESS_INSTANCED_PROP获取每实例数据
-    float4 baseColor =  UNITY_ACCESS_INSTANCED_PROP(UnityPerMaterial, _BaseColor);
-    float4 base = baseMap * baseColor;
+    float4 base = GetBase(input.baseUV);
 
     //只有在_CLIPPING关键字启用时编译该段代码
     #if defined(_CLIPPING)
     //clip函数的传入参数如果<=0则会丢弃该片元
-    clip(base.a - UNITY_ACCESS_INSTANCED_PROP(UnityPerMaterial, _Cutoff));
+    clip(base.a - GetCutoff(input.baseUV));
     #endif
 
     //在片元着色器中构建Surface结构体，即物体表面属性，构建完成之后就可以在片元着色器中计算光照
@@ -105,8 +83,8 @@ float4 LitPassFragment(Varyings input) : SV_TARGET
     surface.depth = -TransformWorldToView(input.positionWS).z;
     surface.color = base.rgb;
     surface.alpha = base.a;
-    surface.metallic = UNITY_ACCESS_INSTANCED_PROP(UnityPerMaterial,_Metallic);
-    surface.smoothness = UNITY_ACCESS_INSTANCED_PROP(UnityPerMaterial,_Smoothness);
+    surface.metallic = GetMetallic(input.baseUV);
+    surface.smoothness = GetSmoothness(input.baseUV);
     //根据片元CS坐标计算抖动值
     surface.dither = InterleavedGradientNoise(input.positionCS.xy,0);
     #if defined(_PREMULTIPLY_ALPHA)
@@ -116,6 +94,7 @@ float4 LitPassFragment(Varyings input) : SV_TARGET
     #endif
     //传入宏定义的片元GI信息，得到烘培好的GI光照结果
     GI gi = GetGI(GI_FRAGMENT_DATA(input), surface);
+
     float3 color = GetLighting(surface,brdf,gi);
     
     return float4(color,surface.alpha);
