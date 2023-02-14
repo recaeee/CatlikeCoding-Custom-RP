@@ -21,6 +21,10 @@ Shader "Custom RP/Lit"
         _Metallic("Metallic",Range(0,1)) = 0
         //光滑度
         _Smoothness("Smoothness",Range(0,1)) = 0.5
+        //自发光纹理，使用的变换同BaseMap
+        [NoScaleOffset]_EmissionMap("Emission",2D) = "white"{}
+        //自发光颜色，使用HDR颜色
+        [HDR]_EmissionColor("Emission",Color) = (0.0,0.0,0.0,0.0)
         //Premultiply Alpha的关键字
         [Toggle(_PREMULTIPLY_ALPHA)]_PremulAlpha("Premultiply Alpha",Float) = 0
 
