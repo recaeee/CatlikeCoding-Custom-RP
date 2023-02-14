@@ -79,7 +79,7 @@ float3 SampleLightProbe(Surface surfaceWS)
             float4 coefficients[7];
             coefficients[0]=unity_SHAr;
             coefficients[1]=unity_SHAg;
-            coefficients[2]=untiy_SHAb;
+            coefficients[2]=unity_SHAb;
             coefficients[3]=unity_SHBr;
             coefficients[4]=unity_SHBg;
             coefficients[5]=unity_SHBb;

@@ -249,17 +249,17 @@ Shader中具体实现部分不详细展开了，通过采样光照贴图，我�
 
 注意，采样光照探针的永远是动态物体，静态物体使用的是光照贴图。并且它们采样出来的光照结果都是作为Diffuse用的，不存在Specular部分。
 
-实现采样光照探针后，场景中的动态物体就有了间接光照作为Diffuse光照，如下图所示（黄色的小球，不清楚为什么纯白的光源会造成黄色间接光照）。
+实现采样光照探针后，场景中的动态物体就有了间接光照作为Diffuse光照，如下图所示（小球从光照探针中获取到了间接光照）。
 
 <div align=center>
 
-![20230210193955](https://raw.githubusercontent.com/recaeee/PicGo/main/recaeee/PicGo20230210193955.png)
+![20230214175925](https://raw.githubusercontent.com/recaeee/PicGo/main/recaeee/PicGo20230214175925.png)
 
 </div>
 
 #### 3.3 光照探针代理体 Light Probe Proxy Volumes
 
-由于对于一个物体，其最后只会使用一个插值后的光照探针，那么对于特别大的物体或者横穿一个四面体的物体而言，仅使用一个插值后的光照探针用于计算间接光照，其结果会不准确，如下图，一个长方体只使用了盒子内的四面体，导致暴露在外的部分也得到比较暗的光照。
+由于对于一个物体，其最后只会使用一个插值后的光照探针，那么对于特别大的物体或者横穿一个四面体的物体而言，仅使用一个插值后的光照探针用于计算间接光照，其结果会不准确，如下图，一个长方体只使用了盒子内的四面体，导致暴露在外的部分也得到比较暗的光照（图中渲染成黄色的原因是当时代码写错了，可以把黄色当成白色，后续也请忽略）。
 
 <div align=center>
 
@@ -287,7 +287,7 @@ Shader中具体实现部分不详细展开了，通过采样光照贴图，我�
 
 <div align=center>
 
-![20230210203601](https://raw.githubusercontent.com/recaeee/PicGo/main/recaeee/PicGo20230210203601.png)
+![20230214180041](https://raw.githubusercontent.com/recaeee/PicGo/main/recaeee/PicGo20230214180041.png)
 
 </div>
 

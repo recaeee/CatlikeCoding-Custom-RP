@@ -17,7 +17,7 @@ float4 unity_DynamicLightmapST;
 //球谐函数的所有系数，一共27个，RGB通道每个9个,实际为float3, SH : Spherical Harmonics
 float4 unity_SHAr;
 float4 unity_SHAg;
-float4 untiy_SHAb;
+float4 unity_SHAb;
 float4 unity_SHBr;
 float4 unity_SHBg;
 float4 unity_SHBb;
