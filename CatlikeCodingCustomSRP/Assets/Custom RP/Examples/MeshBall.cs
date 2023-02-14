@@ -1,5 +1,6 @@
 using System;
 using UnityEngine;
+using UnityEngine.Rendering;
 using Random = UnityEngine.Random;
 
 
@@ -14,6 +15,8 @@ public class MeshBall : MonoBehaviour
     [SerializeField] private Mesh mesh = default;
     //GPU Instancing使用的Material
     [SerializeField] private Material material = default;
+    //所有实例共用的LPPV
+    private LightProbeProxyVolume lightProbeVolume = null;
 
     //我们可以new 1000个GameObject，但是我们也可以直接通过每实例数据去绘制GPU Instancing的物体
     //创建每实例数据
@@ -50,9 +53,29 @@ public class MeshBall : MonoBehaviour
             block.SetVectorArray(baseColorId, baseColors);
             block.SetFloatArray(metallicId, metallic);
             block.SetFloatArray(smoothnessId, smoothness);
+
+            //不用LPPV，才用Light Probes
+            if (!lightProbeVolume)
+            {
+                //获取每个实例的位置
+                var positions = new Vector3[1023];
+                for (int i = 0; i < matrices.Length; i++)
+                {
+                    positions[i] = matrices[i].GetColumn(3);
+                }
+                //计算插值后的光照探针（球谐函数）
+                var lightProbes = new SphericalHarmonicsL2[1023];
+                LightProbes.CalculateInterpolatedLightAndOcclusionProbes(positions, lightProbes, null);
+                //传递所有球谐函数给GPU
+                block.CopySHCoefficientArraysFrom(lightProbes);
+            }
+            
         }
 
         //一帧绘制多个网格，并且没有创建不必要的游戏对象的开销（一次最多只能绘制1023个实例），材质必须支持GPU Instancing
-        Graphics.DrawMeshInstanced(mesh, 0, material, matrices, 1023, block);
+        Graphics.DrawMeshInstanced(mesh, 0, material, matrices, 1023, block,
+            ShadowCastingMode.On, true, 0, null,
+            lightProbeVolume ? LightProbeUsage.UseProxyVolume : LightProbeUsage.CustomProvided,
+            lightProbeVolume);
     }
 }

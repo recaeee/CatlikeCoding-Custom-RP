@@ -7,7 +7,7 @@ Shader "Custom RP/Unlit"
         
         //"white"为默认纯白贴图，{}在很久之前用于纹理的设置
         _BaseMap("Texture", 2D) = "white"{}
-        _BaseColor("Color",Color) = (1.0,1.0,1.0,1.0)
+        [HDR]_BaseColor("Color",Color) = (1.0,1.0,1.0,1.0)
         //透明度测试阈值
         _Cutoff("Alpha Cutoff",Range(0.0,1.0)) = 0.5
         //阴影投射模式

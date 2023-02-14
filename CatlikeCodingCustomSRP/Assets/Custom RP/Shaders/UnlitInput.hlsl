@@ -46,4 +46,10 @@ float GetSmoothness(float2 baseUV)
     return 0.0;
 }
 
+//Unlit的自发光直接按BaseMap，全部发光
+float3 GetEmission(float2 baseUV)
+{
+    return GetBase(baseUV).rgb;
+}
+
 #endif

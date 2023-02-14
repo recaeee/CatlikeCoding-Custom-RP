@@ -34,6 +34,10 @@ Shader "Custom RP/Lit"
         [Enum(UnityEngine.Rendering.BlendMode)]_DstBlend("Dst Blend",Float) = 0
         //深度写入模式
         [Enum(Off,0,On,1)] _ZWrite("Z Write",Float) = 1
+        
+        //烘培透明材质用的_MainTex和_Color
+        [HideInInspector]_MainTex("Texture for Lightmap", 2D) = "white"{}
+        [HideInInspector]_Color("Color for Lightmap", Color) = (0.5,0.5,0.5,1.0)
     }
 
     SubShader
@@ -178,6 +182,11 @@ Shader "Custom RP/Lit"
                     meta.rgb += brdf.specular * brdf.roughness * 0.5;
                     //再提升点亮度
                     meta.rgb = min(PositivePow(meta.rgb, unity_OneOverOutputBoost), unity_MaxOutputValue);
+                }
+                //y控制自发光
+                else if(unity_MetaFragmentControl.y)
+                {
+                    meta = float4(GetEmission(input.baseUV),1.0);
                 }
                 return meta;
             }

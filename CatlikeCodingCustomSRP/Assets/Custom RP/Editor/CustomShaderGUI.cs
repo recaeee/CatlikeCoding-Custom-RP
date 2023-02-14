@@ -23,6 +23,9 @@ public class CustomShaderGUI : ShaderGUI
         materials = materialEditor.targets;
         this.properties = properties;
         
+        //主动烘培自发光
+        BakedEmission();
+        
         //增加一行空行
         EditorGUILayout.Space();
         //设置折叠标签
@@ -258,6 +261,40 @@ public class CustomShaderGUI : ShaderGUI
         foreach (Material m in materials)
         {
             m.SetShaderPassEnabled("ShadowCaster", enabled);
+        }
+    }
+
+    //主动烘培自发光
+    void BakedEmission()
+    {
+        EditorGUI.BeginChangeCheck();
+        editor.LightmapEmissionProperty();
+        //让Unity识别要计算自发光的所有材质
+        if (EditorGUI.EndChangeCheck())
+        {
+            foreach (Material m in editor.targets)
+            {
+                m.globalIlluminationFlags &= ~ MaterialGlobalIlluminationFlags.EmissiveIsBlack;
+            }
+        }
+    }
+    
+    //复制_BaseMap和_BaseColor到_MainTex和_Color，为了支持透明材质的烘培
+    void CopyLightMappingProperties()
+    {
+        MaterialProperty mainTex = FindProperty("_MainTex", properties, false);
+        MaterialProperty baseMap = FindProperty("_BaseMap", properties, false);
+        if (mainTex != null && baseMap != null)
+        {
+            mainTex.textureValue = baseMap.textureValue;
+            mainTex.textureScaleAndOffset = baseMap.textureScaleAndOffset;
+        }
+
+        MaterialProperty color = FindProperty("_Color", properties, false);
+        MaterialProperty baseColor = FindProperty("_BaseColor", properties, false);
+        if (color != null && baseColor != null)
+        {
+            color.colorValue = baseColor.colorValue;
         }
     }
 }

@@ -94,9 +94,10 @@ float4 LitPassFragment(Varyings input) : SV_TARGET
     #endif
     //传入宏定义的片元GI信息，得到烘培好的GI光照结果
     GI gi = GetGI(GI_FRAGMENT_DATA(input), surface);
-
-    float3 color = GetLighting(surface,brdf,gi);
     
+    float3 color = GetLighting(surface,brdf,gi);
+    //考虑自发光
+    color += GetEmission(input.baseUV);
     return float4(color,surface.alpha);
 }
 

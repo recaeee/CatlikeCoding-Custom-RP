@@ -315,7 +315,7 @@ Shader中具体实现部分不详细展开了，通过采样光照贴图，我�
 
 #### 4.5 漫反射反射率 Diffuse Reflectivity
 
-在这一节中，将片元的漫反射率作为片元着色器的输出，这样，就可以**让GI系统获取到烘培时使用的漫反射率**。其中，对间接光照使用的漫反射反射率进行了一定的修饰操作。对于将光能量更多以Specular形式反射但粗糙度较大的表面，也考虑其提供一定的间接光，这是挺有道理的，因为粗糙度大意味着其反射范围大，一定程度上性质接近diffuse。另外，还会对diffuse最终做一次power运算。
+在这一节中，将片元的漫反射率作为片元着色器的输出，这样，就可以**让GI系统获取到烘培时使用的漫反射率**。其中，对间接光照使用的漫反射反射率进行了一定的修饰操作。**对于将光能量更多以Specular形式反射但粗糙度较大的表面，也考虑其提供一定的间接光**，这是挺有道理的，因为粗糙度大意味着其反射范围大，一定程度上性质接近diffuse。另外，还会对diffuse最终做一次power运算。
 
 在实现该Meta Pass后，我们得到了很不错的GI效果，其考虑了物体表面的Diffuse属性。
 
@@ -329,9 +329,85 @@ Shader中具体实现部分不详细展开了，通过采样光照贴图，我�
 
 为了实现自发光的物体表面，我们需要一张纹理来代表物体的自发光，然后在片元着色器中采样它，将其直接加到finalColor上来模拟自发光，但这样它不会影响到其他物体，在GI系统中可以提供对自发光的间接光照烘培支持。
 
-#### 5.1 发射光 Emitted Light
+#### 5.1 实时自发光 Emitted Light
 
+先实现自发光的实时渲染部分。对于Lit材质，直接叠加EmissionMap的采样结果到finalColor来模拟自发光；对于Unlit材质，默认其为整个BaseMap的全自发光。另外，使用**HDR颜色**来控制自发光的颜色，来使自发光颜色更亮。
 
+另外，在使用光照贴图时，可能会弹UV重叠的Warning，其是**由于顶点太近以至于共用了光照贴图上的同一像素导致的**，可以通过增大LightmapScale来解决该问题。
+
+#### 5.2 烘培自发光 Baked Emission
+
+本节在Meta Pass中，实现自发光值的返回。与Diffuse不同的是，自发光的间接光照不会自动烘培到光照贴图中，而是需要手动烘培，教程中将手动烘培功能放在了材质面板上。
+
+下图为未烘培自发光的效果图。
+
+<div align=center>
+
+![20230214213257](https://raw.githubusercontent.com/recaeee/PicGo/main/20230214213257.png)
+
+</div>
+
+下图为烘培好自发光的效果图，效果还是非常不错的。
+
+<div align=center>
+
+![20230214213354](https://raw.githubusercontent.com/recaeee/PicGo/main/20230214213354.png)
+
+</div>
+
+#### 6 烘培透明材质 Baked Transparency
+
+接下来实现透明材质的烘培。
+
+#### 6.1 硬编码属性 Hard-Coded Properties
+
+Unity的Lightmapper自己实现好了透明材质的烘培支持，但是其需要硬编码的材质属性。在烘培光照贴图时，**Unity会自己对每个材质判断其属于Opaque、Clip、Transparency**，对于Clip和Transparency的材质，Unity会**自动捕捉材质中名为"_MainTex"的纹理与名为"_Color"的颜色**，并让两者相乘得到alpha值，再捕捉材质中名为"_Cutoff"的float值来进行Clip操作。
+
+#### 6.2 复制属性 Copying Properties
+
+因此，**要实现透明材质的烘培，只需要维护好材质的_MainTex、_Color、_Cutoff三个属性**，剩下的交给Unity就行了。在材质GUI中，实现了将材质的_BaseMap复制给材质的_MainTex属性，其余两个值同理。
+
+这种硬编码的方式节省了我们很多工作，但其也意味着，**在烘培时，只能考虑每材质属性，不能考虑每实例属性**。
+
+以下为透明物体的烘培效果图。
+
+</div align=center>
+
+![20230214215219](https://raw.githubusercontent.com/recaeee/PicGo/main/20230214215219.png)
+
+</div>
+
+#### 7 程序生成小球 Mesh Ball
+
+接下来实现让程序化生成的小球接收光照探针的间接光照。
+
+#### 7.1 光照探针 Light Probes
+
+对于每个DrawMeshInstanced的小球，我们都需要手动根据其位置计算插值后的光照探针，并将球谐函数传递给GPU。
+
+以下为效果图。
+
+<div align=center>
+
+![20230214220412](https://raw.githubusercontent.com/recaeee/PicGo/main/20230214220412.png)
+
+</div>
+
+#### 7.2 光照探针代理体 LPPV
+
+对于每个实例，计算一个球谐函数并传递给GPU的成本比较大，我们可以使用一个LPPV，让所有实例都共用这一个LPPV。这有两个好处，一是**优化了性能**，二是**在实例位置移动时，不需要重新计算Probes**。
+
+LPPV的Bounding Box可以设置成DrawInstance的范围，如下图所示。
+
+<div align=center>
+
+![20230214221223](https://raw.githubusercontent.com/recaeee/PicGo/main/20230214221223.png)
+
+</div>
+
+#### 结束语
+
+这一章结束了，虽然文字压缩了很多，但其实GI涵盖的知识还是非常多的，其中比较重要的就是关于球谐函数的知识了。在实际项目中，GI也会经常被用到，是不可或缺的技能点。总的来说，这一章我还是比较满意的，主要是工作量减少了很多，懒了懒了~
 
 #### 参考
 
