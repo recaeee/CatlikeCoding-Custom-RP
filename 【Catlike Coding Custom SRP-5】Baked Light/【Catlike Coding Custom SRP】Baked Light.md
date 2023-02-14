@@ -321,7 +321,7 @@ Shader中具体实现部分不详细展开了，通过采样光照贴图，我�
 
 <div align=center>
 
-![20230213235251](https://raw.githubusercontent.com/recaeee/PicGo/main/20230213235251.png)
+![20230214180515](https://raw.githubusercontent.com/recaeee/PicGo/main/recaeee/PicGo20230214180515.png)
 
 </div>
 
