@@ -9,6 +9,10 @@
 TEXTURE2D(unity_Lightmap);
 SAMPLER(samplerunity_Lightmap);
 
+//GPU接受阴影遮罩和其采样器
+TEXTURE2D(unity_ShadowMask);
+SAMPLER(samplerunity_ShadowMask);
+
 //LPPV的3D纹理
 TEXTURE3D_FLOAT(unity_ProbeVolumeSH);
 SAMPLER(sampler_unity_ProbeVolumeSH);
@@ -35,6 +39,8 @@ struct GI
 {
     //片元接收到的GI光照结果，该光照结果为光照贴图上采样得到，这部分光照能量会被全部以漫反射形式在表面反射出去。
     float3 diffuse;
+    //阴影遮罩信息
+    ShadowMask shadowMask;
 };
 
 //采样光照贴图
@@ -55,6 +61,18 @@ float3 SampleLightMap(float2 lightMapUV)
             );
     #else
         return 0.0;
+    #endif
+}
+
+//采样阴影遮罩纹理，返回阴影衰减度
+float4 SampleBakedShadows(float2 lightMapUV)
+{
+    //阴影遮罩只对使用光照贴图的表面起作用，因此直接使用LIGHTMAP_ON关键字
+    #if defined(LIGHTMAP_ON)
+        return SAMPLE_TEXTURE2D(unity_ShadowMask, samplerunity_ShadowMask, lightMapUV);
+    #else
+        //未使用光照贴图，意味着也未使用阴影遮罩，因此返回1，代表阴影完全衰减
+        return 1.0;
     #endif
 }
 
@@ -94,6 +112,9 @@ float3 SampleLightProbe(Surface surfaceWS)
 GI GetGI(float2 lightMapUV, Surface surfaceWS)
 {
     GI gi;
+    //初始化阴影遮罩信息
+    gi.shadowMask.distance = false;
+    gi.shadowMask.shadows = 1.0;
     //采样光照贴图作为表面片元接收到GI上的diffuse光照
     //采样光照探针作为表面片元接收到GI上的diffuse光照
     //两者只得一

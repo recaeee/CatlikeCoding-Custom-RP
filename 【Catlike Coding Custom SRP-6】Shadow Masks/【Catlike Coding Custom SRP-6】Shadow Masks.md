@@ -24,6 +24,24 @@ GI在Baked Indirect模式下，只会烘培出一张光照贴图存储间接光�
 
 #### 1.1 距离阴影遮罩 Distance Shadow Mask
 
+首先将GI中的Lighting Mode设置为Shadowmask，ShadowMask模式与Baked Indirect模式非常类似，它们都会为场景中参与GI的静态物体烘培一张光照贴图来存储间接光照信息。不同点在于,Shadowmask模式会额外为场景中参与GI的静态物体烘培一张**阴影遮罩纹理**，在其中存储烘培光源的遮挡信息。
+
+<div align=center>
+
+![20230216201422](https://raw.githubusercontent.com/recaeee/PicGo/main/recaeee/PicGo20230216201422.png)
+
+</div>
+
+阴影遮罩纹理如下图所示。
+
+<div align=center>
+
+![20230216201545](https://raw.githubusercontent.com/recaeee/PicGo/main/recaeee/PicGo20230216201545.png)
+
+</div>
+
+#### 1.2 探测阴影遮罩 Detecting a Shadow Mask
+
 
 
 

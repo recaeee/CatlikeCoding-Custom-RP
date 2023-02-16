@@ -20,6 +20,11 @@ public class Shadows
         "_CASCADE_BLEND_SOFT",
         "_CASCADE_BLEND_DITHER"
     };
+    //阴影遮罩关键字
+    private static string[] shadowMaskKeywords =
+    {
+        "_SHADOW_MASK_DISTANCE"
+    };
     //方向光源Shadow Atlas、阴影变化矩阵数组的标识、级联总数、单个级联的CullingSphere索引、级联信息、PCF过滤需要的阴影贴图信息（atlas大小、texel大小）、Vector3(最大阴影距离，渐变距离比例，最大级联渐变比例）
     private static int dirShadowAtlasId = Shader.PropertyToID("_DirectionalShadowAtlas"),
         dirShadowMatricesId = Shader.PropertyToID("_DirectionalShadowMatrices"),
@@ -44,6 +49,7 @@ public class Shadows
     private CullingResults cullingResults;
 
     private ShadowSettings settings;
+    
 
     //用于获取当前支持阴影的方向光源的一些信息
     struct ShadowedDirectionalLight
@@ -63,6 +69,9 @@ public class Shadows
     //当前已配置完毕的方向光源数
     private int ShadowedDirectionalLightCount;
 
+    //当前是否使用阴影遮罩
+    private bool useShadowMask;
+
     public void Setup(ScriptableRenderContext context, CullingResults cullingResults,
         ShadowSettings settings)
     {
@@ -71,6 +80,7 @@ public class Shadows
         this.settings = settings;
         //每帧初始时ShadowedDirectionalLightCount为0，在配置每个光源时其+1
         ShadowedDirectionalLightCount = 0;
+        useShadowMask = false;
     }
 
     void ExecuteBuffer()
@@ -89,6 +99,15 @@ public class Shadows
         if (ShadowedDirectionalLightCount < maxShadowedDirectionalLightCount && light.shadows != LightShadows.None && light.shadowStrength > 0f
             && cullingResults.GetShadowCasterBounds(visibleLightIndex, out Bounds b))
         {
+            //判断当前光源是否使用了阴影遮罩
+            //获取当前光源的烘培信息
+            LightBakingOutput lightBaking = light.bakingOutput;
+            if (lightBaking.lightmapBakeType == LightmapBakeType.Mixed &&
+                lightBaking.mixedLightingMode == MixedLightingMode.Shadowmask)
+            {
+                useShadowMask = true;
+            }
+            
             ShadowedDirectionalLights[ShadowedDirectionalLightCount] = new ShadowedDirectionalLight()
             {
                 visibleLightIndex = visibleLightIndex,
@@ -115,6 +134,9 @@ public class Shadows
             //因为WebGL 2.0下如果某个材质包含ShadowMap但在加载时丢失了ShadowMap会报错
             buffer.GetTemporaryRT(dirShadowAtlasId, 1, 1, 32, FilterMode.Bilinear, RenderTextureFormat.Shadowmap);
         }
+        //每帧决定阴影遮罩关键字的状态
+        buffer.BeginSample(bufferName);
+        SetKeywords(shadowMaskKeywords, useShadowMask ? 0 : -1);
     }
 
     //渲染方向光源的Shadow Map到ShadowAtlas上

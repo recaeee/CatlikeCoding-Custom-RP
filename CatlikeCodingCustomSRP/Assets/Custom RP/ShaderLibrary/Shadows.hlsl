@@ -55,6 +55,15 @@ struct DirectionalShadowData
     float normalBias;
 };
 
+//阴影遮罩信息
+struct ShadowMask
+{
+    //是否使用distance shadow mask
+    bool distance;
+    //
+    float4 shadows;
+};
+
 //定义每个片元（world space surface)的级联信息
 struct ShadowData
 {
@@ -64,6 +73,8 @@ struct ShadowData
     float cascadeBlend;
     //级联阴影的强度，0阴影最淡消失，1阴影完全存在，用来控制不同距离级联阴影过渡
     float strength;
+    //阴影遮罩信息
+    ShadowMask shadowMask;
 };
 
 /**
@@ -83,6 +94,9 @@ float FadedShadowStrength(float distance,float scale,float fade)
 ShadowData GetShadowData(Surface surfaceWS)
 {
     ShadowData data;
+    //初始化阴影遮罩信息
+    data.shadowMask.distance = false;
+    data.shadowMask.shadows = 1.0;
     //默认级联混合插值为1，表示完全使用当前级联
     data.cascadeBlend = 1.0;
     data.strength = FadedShadowStrength(surfaceWS.depth,_ShadowDistanceFade.x,_ShadowDistanceFade.y);
