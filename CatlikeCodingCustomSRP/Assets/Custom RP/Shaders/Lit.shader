@@ -71,7 +71,7 @@ Shader "Custom RP/Lit"
             #pragma multi_compile _ _DIRECTIONAL_PCF3 _DIRECTIONAL_PCF5 _DIRECTIONAL_PCF7
             //定义级联混合的关键字
             #pragma multi_compile _ _CASCADE_BLEND_SOFT _CASCADE_BLEND_DITHER
-            //定义是否启用阴影遮罩
+            //定义是否启用阴影遮罩，当光源的lightMode为ShadowMask且光源lightmapBakeType为Mixed时开启该关键字
             #pragma multi_compile _ _SHADOW_MASK_DISTANCE
             //定义光照贴图的关键字，启用光照贴图时，Unity会自动使用开启该关键字的着色器变体
             #pragma multi_compile _ LIGHTMAP_ON

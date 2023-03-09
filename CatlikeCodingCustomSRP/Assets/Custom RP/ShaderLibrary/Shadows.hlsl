@@ -60,7 +60,7 @@ struct ShadowMask
 {
     //是否使用distance shadow mask
     bool distance;
-    //
+    //采样阴影遮罩图的颜色结果
     float4 shadows;
 };
 

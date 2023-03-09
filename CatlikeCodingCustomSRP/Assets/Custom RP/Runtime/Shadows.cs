@@ -137,6 +137,8 @@ public class Shadows
         //每帧决定阴影遮罩关键字的状态
         buffer.BeginSample(bufferName);
         SetKeywords(shadowMaskKeywords, useShadowMask ? 0 : -1);
+        buffer.EndSample(bufferName);
+        ExecuteBuffer();
     }
 
     //渲染方向光源的Shadow Map到ShadowAtlas上

@@ -39,7 +39,7 @@ struct GI
 {
     //片元接收到的GI光照结果，该光照结果为光照贴图上采样得到，这部分光照能量会被全部以漫反射形式在表面反射出去。
     float3 diffuse;
-    //阴影遮罩信息
+    //阴影遮罩信息，存储到GI是因为阴影遮罩属于烘培光照数据的一部分
     ShadowMask shadowMask;
 };
 
@@ -69,6 +69,7 @@ float4 SampleBakedShadows(float2 lightMapUV)
 {
     //阴影遮罩只对使用光照贴图的表面起作用，因此直接使用LIGHTMAP_ON关键字
     #if defined(LIGHTMAP_ON)
+        //这里可以看到使用的uv坐标和光照贴图是同一套
         return SAMPLE_TEXTURE2D(unity_ShadowMask, samplerunity_ShadowMask, lightMapUV);
     #else
         //未使用光照贴图，意味着也未使用阴影遮罩，因此返回1，代表阴影完全衰减
@@ -119,6 +120,12 @@ GI GetGI(float2 lightMapUV, Surface surfaceWS)
     //采样光照探针作为表面片元接收到GI上的diffuse光照
     //两者只得一
     gi.diffuse = SampleLightMap(lightMapUV) + SampleLightProbe(surfaceWS);
+
+    #if defined(_SHADOW_MASK_DISTANCE)
+        gi.shadowMask.distance = true;
+        //采样阴影遮罩图
+        gi.shadowMask.shadows = SampleBakedShadows(lightMapUV);
+    #endif
     return gi;
 }
 #endif
