@@ -1,4 +1,4 @@
-# 【Catlike Coding Custom SRP-6】Shadow Masks
+# 【Catlike Coding Custom SRP学习之旅——6】Shadow Masks
 #### 写在前面
 本篇到了阴影遮罩了，阴影遮罩这一章相对来说知识点比较少，主要涉及到了ShadowMask存储了什么信息，以及两个ShadowMask模式的特点等。另外主要还提到了一种比较好的阴影渲染方案，即近处使用实时阴影，远处使用烘培阴影，在教程中也实现了这一点。
 
