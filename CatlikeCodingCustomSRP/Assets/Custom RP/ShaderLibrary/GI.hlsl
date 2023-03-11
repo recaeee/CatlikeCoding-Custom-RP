@@ -65,15 +65,25 @@ float3 SampleLightMap(float2 lightMapUV)
 }
 
 //采样阴影遮罩纹理，返回阴影衰减度
-float4 SampleBakedShadows(float2 lightMapUV)
+float4 SampleBakedShadows(float2 lightMapUV, Surface surfaceWS)
 {
     //阴影遮罩只对使用光照贴图的表面起作用，因此直接使用LIGHTMAP_ON关键字
     #if defined(LIGHTMAP_ON)
         //这里可以看到使用的uv坐标和光照贴图是同一套
         return SAMPLE_TEXTURE2D(unity_ShadowMask, samplerunity_ShadowMask, lightMapUV);
     #else
-        //未使用光照贴图，意味着也未使用阴影遮罩，因此返回1，代表阴影完全衰减
-        return 1.0;
+        //未使用光照贴图，意味着是动态物体，使用遮蔽探针或者遮蔽LPPV
+        if(unity_ProbeVolumeParams.x)
+        {
+            return SampleProbeOcclusion(TEXTURE3D_ARGS(unity_ProbeVolumeSH, sampler_unity_ProbeVolumeSH),
+                surfaceWS.position,unity_ProbeVolumeWorldToObject,
+                unity_ProbeVolumeParams.y, unity_ProbeVolumeParams.z,
+                unity_ProbeVolumeMin.xyz, unity_ProbeVolumeSizeInv.xyz);
+        }
+        else
+        {
+            return unity_ProbesOcclusion;
+        }
     #endif
 }
 
@@ -114,17 +124,23 @@ GI GetGI(float2 lightMapUV, Surface surfaceWS)
 {
     GI gi;
     //初始化阴影遮罩信息
+    gi.shadowMask.always = false;
     gi.shadowMask.distance = false;
     gi.shadowMask.shadows = 1.0;
+
     //采样光照贴图作为表面片元接收到GI上的diffuse光照
     //采样光照探针作为表面片元接收到GI上的diffuse光照
     //两者只得一
     gi.diffuse = SampleLightMap(lightMapUV) + SampleLightProbe(surfaceWS);
 
-    #if defined(_SHADOW_MASK_DISTANCE)
+    //两种阴影遮罩模式
+    #if defined(_SHADOW_MASK_ALWAYS)
+        gi.shadowMask.always = true;
+        gi.shadowMask.shadows = SampleBakedShadows(lightMapUV, surfaceWS);
+    #elif defined(_SHADOW_MASK_DISTANCE)
         gi.shadowMask.distance = true;
         //采样阴影遮罩图
-        gi.shadowMask.shadows = SampleBakedShadows(lightMapUV);
+        gi.shadowMask.shadows = SampleBakedShadows(lightMapUV, surfaceWS);
     #endif
     return gi;
 }

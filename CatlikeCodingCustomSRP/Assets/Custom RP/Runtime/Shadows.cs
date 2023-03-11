@@ -23,6 +23,7 @@ public class Shadows
     //阴影遮罩关键字
     private static string[] shadowMaskKeywords =
     {
+        "_SHADOW_MASK_ALWAYS",
         "_SHADOW_MASK_DISTANCE"
     };
     //方向光源Shadow Atlas、阴影变化矩阵数组的标识、级联总数、单个级联的CullingSphere索引、级联信息、PCF过滤需要的阴影贴图信息（atlas大小、texel大小）、Vector3(最大阴影距离，渐变距离比例，最大级联渐变比例）
@@ -90,15 +91,16 @@ public class Shadows
     }
 
     //每帧执行，用于为light配置shadow altas（shadowMap）上预留一片空间来渲染阴影贴图，同时存储一些其他必要信息
-    //返回每个光源的阴影强度、其第一个级联的索引、光源的阴影法线偏移，传递给GPU存储到Light结构体
-    public Vector3 ReserveDirectionalShadows(Light light, int visibleLightIndex)
+    //返回每个光源的阴影强度、其第一个级联的索引、光源的阴影法线偏移、光源对应Shadowmask通道索引，传递给GPU存储到Light结构体
+    public Vector4 ReserveDirectionalShadows(Light light, int visibleLightIndex)
     {
         //配置光源数不超过最大值
         //只配置开启阴影且阴影强度大于0的光源
-        //忽略不需要渲染任何阴影的光源（通过cullingResults.GetShadowCasterBounds方法）
-        if (ShadowedDirectionalLightCount < maxShadowedDirectionalLightCount && light.shadows != LightShadows.None && light.shadowStrength > 0f
-            && cullingResults.GetShadowCasterBounds(visibleLightIndex, out Bounds b))
+        
+        if (ShadowedDirectionalLightCount < maxShadowedDirectionalLightCount && light.shadows != LightShadows.None && light.shadowStrength > 0f)
         {
+            //-1表示该光源不使用Shadowmask
+            float maskChannel = -1;
             //判断当前光源是否使用了阴影遮罩
             //获取当前光源的烘培信息
             LightBakingOutput lightBaking = light.bakingOutput;
@@ -106,6 +108,13 @@ public class Shadows
                 lightBaking.mixedLightingMode == MixedLightingMode.Shadowmask)
             {
                 useShadowMask = true;
+                maskChannel = lightBaking.occlusionMaskChannel;
+            }
+
+            //对于不需要渲染任何阴影的光源（通过cullingResults.GetShadowCasterBounds方法），考虑其烘培阴影
+            if (!cullingResults.GetShadowCasterBounds(visibleLightIndex, out Bounds b))
+            {
+                return new Vector4(-light.shadowStrength, 0f, 0f, maskChannel);
             }
             
             ShadowedDirectionalLights[ShadowedDirectionalLightCount] = new ShadowedDirectionalLight()
@@ -115,10 +124,11 @@ public class Shadows
                 slopeScaleBias = light.shadowBias,
                 nearPlaneOffset = light.shadowNearPlane
             };
-            return new Vector3(light.shadowStrength,
-                settings.directional.cascadeCount * ShadowedDirectionalLightCount++, light.shadowNormalBias);
+            return new Vector4(light.shadowStrength,
+                settings.directional.cascadeCount * ShadowedDirectionalLightCount++, light.shadowNormalBias, maskChannel);
         }
-        return Vector3.zero;
+
+        return new Vector4(0f, 0f, 0f, -1f);
     }
 
     //渲染阴影贴图
@@ -136,7 +146,7 @@ public class Shadows
         }
         //每帧决定阴影遮罩关键字的状态
         buffer.BeginSample(bufferName);
-        SetKeywords(shadowMaskKeywords, useShadowMask ? 0 : -1);
+        SetKeywords(shadowMaskKeywords, useShadowMask ? QualitySettings.shadowmaskMode == ShadowmaskMode.Shadowmask ? 0 : 1 : -1);
         buffer.EndSample(bufferName);
         ExecuteBuffer();
     }

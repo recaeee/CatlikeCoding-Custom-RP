@@ -11,6 +11,8 @@ float4x4 unity_WorldToObject;
 //如果不加这个unity_LODFade，不能支持SRP Batcher
 float4 unity_LODFade;
 real4 unity_WorldTransformParams;
+//遮蔽探针
+float4 unity_ProbesOcclusion;
 //光照贴图uv的变换，它们定义了一个纹理展开方式。纹理展开：将Mesh的每个三角网格映射到一个二维平面(UV坐标系)
 float4 unity_LightmapST;
 float4 unity_DynamicLightmapST;

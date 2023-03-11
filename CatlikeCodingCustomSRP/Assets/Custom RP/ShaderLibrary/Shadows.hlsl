@@ -53,12 +53,16 @@ struct DirectionalShadowData
     int tileIndex;
     //阴影法线偏移的系数
     float normalBias;
+    //使用的shadowMask通道索引，-1表示不使用shadowmask
+    int shadowMaskChannel;
 };
 
 //阴影遮罩信息
 struct ShadowMask
 {
-    //是否使用distance shadow mask
+    //是否使用shadowmask模式，静态物体不投射实时阴影
+    bool always;
+    //是否使用distance shadow mask，当_SHADOW_MASK_DISTANCE关键字开启时，该值为True
     bool distance;
     //采样阴影遮罩图的颜色结果
     float4 shadows;
@@ -95,6 +99,7 @@ ShadowData GetShadowData(Surface surfaceWS)
 {
     ShadowData data;
     //初始化阴影遮罩信息
+    data.shadowMask.always = false;
     data.shadowMask.distance = false;
     data.shadowMask.shadows = 1.0;
     //默认级联混合插值为1，表示完全使用当前级联
@@ -172,18 +177,9 @@ float FilterDirectionalShadow(float3 positionSTS)
     #endif
 }
 
-//计算阴影衰减值，返回值[0,1]，0代表阴影衰减最大（片元完全在阴影中），1代表阴影衰减最少，片元完全被光照射。而[0,1]的中间值代表片元有一部分在阴影中
-float GetDirectionalShadowAttenuation(DirectionalShadowData directional, ShadowData global, Surface surfaceWS)
+//计算实时阴影
+float GetCascadedShadow(DirectionalShadowData directional, ShadowData global, Surface surfaceWS)
 {
-    //考虑不接受阴影
-    #if !defined(_RECEIVE_SHADOWS)
-        return 1.0;
-    #endif
-    //忽略不开启阴影和阴影强度为0的光源
-    if(directional.strength <= 0.0)
-    {
-        return 1.0;
-    }
     //计算法线偏移
     float3 normalBias = surfaceWS.normal * (directional.normalBias * _CascadeData[global.cascadeIndex].y);
     //根据对应Tile阴影变换矩阵和(经过法线偏移后)片元的世界坐标计算Tile上的像素坐标STS
@@ -197,9 +193,77 @@ float GetDirectionalShadowAttenuation(DirectionalShadowData directional, ShadowD
         positionSTS = mul(_DirectionalShadowMatrices[directional.tileIndex + 1],float4(surfaceWS.position + normalBias,1.0)).xyz;
         shadow = lerp(FilterDirectionalShadow(positionSTS),shadow,global.cascadeBlend);
     }
-    //考虑光源的阴影强度，strength为0，依然没有阴影
-    return lerp(1.0,shadow,directional.strength);
+    return shadow;
 }
+
+//计算混合用的烘培阴影
+float GetBakedShadow(ShadowMask mask, int channel)
+{
+    float shadow = 1.0;
+    if(mask.always || mask.distance)
+    {
+        if(channel >= 0)
+        {
+            shadow = mask.shadows[channel];
+        }
+        
+    }
+    return shadow;
+}
+
+//无论何时都可用的获取烘培阴影，传入的strength用于控制静态阴影强度
+float GetBakedShadow(ShadowMask mask, int channel, float strength)
+{
+    if(mask.always || mask.distance)
+    {
+        return lerp(1.0, GetBakedShadow(mask, channel), strength);
+    }
+    return 1.0;
+}
+
+//混合实时阴影和静态阴影，如果使用ShadowMask则完全使用烘培阴影，其中传入的shadow为实时阴影衰减度
+float MixBakedAndRealtimeShadows(ShadowData global, float shadow, int shadowMaskChannel, float strength)
+{
+    float baked = GetBakedShadow(global.shadowMask, shadowMaskChannel);
+    if(global.shadowMask.always)
+    {
+        shadow = lerp(1.0, shadow, global.strength);
+        shadow = min(baked, shadow);
+        return lerp(1.0, shadow, strength);
+    }
+    if(global.shadowMask.distance)
+    {
+        //global.strength表示阴影级联的强度，0表示最大级联，即无阴影，因此完全使用烘培阴影，其余则过渡。
+        shadow = lerp(baked, shadow, global.strength);
+        return lerp(1.0,shadow, strength);
+    }
+    return lerp(1.0, shadow, strength * global.strength);
+}
+
+//计算阴影衰减值，返回值[0,1]，0代表阴影衰减最大（片元完全在阴影中），1代表阴影衰减最少，片元完全被光照射。而[0,1]的中间值代表片元有一部分在阴影中
+float GetDirectionalShadowAttenuation(DirectionalShadowData directional, ShadowData global, Surface surfaceWS)
+{
+    //考虑不接受阴影
+    #if !defined(_RECEIVE_SHADOWS)
+        return 1.0;
+    #endif
+    //忽略不开启阴影和阴影强度为0的光源
+    float shadow;
+    if(directional.strength * global.strength <= 0.0)
+    {
+        shadow =  GetBakedShadow(global.shadowMask, directional.shadowMaskChannel, abs(directional.strength));
+    }
+    else
+    {
+        shadow = GetCascadedShadow(directional,global,surfaceWS);
+        //考虑光源的阴影强度，strength为0，依然没有阴影
+        shadow = MixBakedAndRealtimeShadows(global, shadow, directional.shadowMaskChannel, directional.strength);
+    }
+    return shadow;
+    
+}
+
+
 
 
 

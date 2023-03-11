@@ -65,9 +65,12 @@ public class MeshBall : MonoBehaviour
                 }
                 //计算插值后的光照探针（球谐函数）
                 var lightProbes = new SphericalHarmonicsL2[1023];
-                LightProbes.CalculateInterpolatedLightAndOcclusionProbes(positions, lightProbes, null);
+                var occlusionProbes = new Vector4[1023];
+                LightProbes.CalculateInterpolatedLightAndOcclusionProbes(positions, lightProbes, occlusionProbes);
                 //传递所有球谐函数给GPU
                 block.CopySHCoefficientArraysFrom(lightProbes);
+                //传递所有遮蔽探针用于计算LPPVs
+                block.CopyProbeOcclusionArrayFrom(occlusionProbes);
             }
             
         }
