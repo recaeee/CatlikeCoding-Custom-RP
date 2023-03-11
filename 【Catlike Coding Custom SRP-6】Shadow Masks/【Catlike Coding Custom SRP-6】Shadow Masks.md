@@ -208,3 +208,4 @@ Shadowmap具有4个通道，参考[《官方文档》](https://docs.unity3d.com/
 2. https://zhuanlan.zhihu.com/p/126362480
 3. https://docs.unity3d.com/cn/2021.3/Manual/LightMode-Mixed-Subtractive.html
 4. https://docs.unity3d.com/cn/2021.3/Manual/LightMode-Mixed-Shadowmask.html
+5. 题图来自Wlop大大。
