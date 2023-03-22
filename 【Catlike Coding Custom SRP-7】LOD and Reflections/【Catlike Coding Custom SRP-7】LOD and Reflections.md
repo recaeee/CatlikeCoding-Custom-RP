@@ -212,7 +212,7 @@ Unity以组件形式提供了对LOD的支持，该组件名为**LOD Group**，�
 
 并且，当反射探针的模式为**Baked**时，需要在GO上勾选Reflection Probe Static来让物体被渲染到反射探针上，而**Realtime**模式不用考虑这个问题。
 
-#### 2.7 Decoding Probes
+#### 2.7 解码反射探针 Decoding Probes
 
 最后，在GPU端需要解码PerObject的反射探针信息，包括反射探针使用HDR还是LDR，反射探针的强度。
 
