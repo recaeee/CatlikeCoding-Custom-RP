@@ -21,6 +21,8 @@ Shader "Custom RP/Lit"
         _Metallic("Metallic",Range(0,1)) = 0
         //光滑度
         _Smoothness("Smoothness",Range(0,1)) = 0.5
+        //菲涅尔系数
+        _Fresnel("Fresnel",Range(0,1)) = 1
         //自发光纹理，使用的变换同BaseMap
         [NoScaleOffset]_EmissionMap("Emission",2D) = "white"{}
         //自发光颜色，使用HDR颜色
@@ -77,6 +79,8 @@ Shader "Custom RP/Lit"
             #pragma multi_compile _ LIGHTMAP_ON
             //这一指令会让Unity生成两个该Shader的变体，一个支持GPU Instancing，另一个不支持。
             #pragma multi_compile_instancing
+            //生成LOD过渡使用的变体，主Pass和阴影Pass都需要
+            #pragma multi_compile _ LOD_FADE_CROSSFADE
             #pragma vertex LitPassVertex
             #pragma fragment LitPassFragment
             #include "LitPass.hlsl"
@@ -101,6 +105,8 @@ Shader "Custom RP/Lit"
             #pragma shader_feature _ _SHADOWS_CLIP _SHADOWS_DITHER
             //定义diffuse项是否使用Premultiplied alpha的关键字
             #pragma multi_compile_instancing
+            //生成LOD过渡使用的变体，主Pass和阴影Pass都需要
+            #pragma multi_compile _ LOD_FADE_CROSSFADE
             #pragma vertex ShadowCasterPassVertex
             #pragma fragment ShadowCasterPassFragment
             //阴影相关方法写在ShadowCasterPass.hlsl

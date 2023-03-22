@@ -37,4 +37,15 @@ float DistanceSquared(float3 pA,float3 pB)
     return dot(pA - pB,pA - pB);
 }
 
+//用于LOD抖动过渡 clip
+void ClipLOD(float2 positionCS, float fade)
+{
+    #if defined(LOD_FADE_CROSSFADE)
+    //使用和透明物体阴影相同的抖动算法
+    float dither = InterleavedGradientNoise(positionCS.xy,0);
+    //考虑下一LOD的负值
+    clip(fade + (fade < 0.0 ? dither : -dither));
+    #endif
+}
+
 #endif

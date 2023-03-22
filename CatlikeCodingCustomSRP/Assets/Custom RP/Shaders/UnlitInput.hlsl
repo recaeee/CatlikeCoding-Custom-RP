@@ -15,7 +15,7 @@ UNITY_INSTANCING_BUFFER_START(UnityPerMaterial)
 UNITY_INSTANCING_BUFFER_END(UnityPerMaterial)
 
 //统一传入baseUV，即使并未实际用到
-float2 TransformBaseUV(float baseUV)
+float2 TransformBaseUV(float2 baseUV)
 {
     float4 baseST = UNITY_ACCESS_INSTANCED_PROP(UnityPerMaterial, _BaseMap_ST);
     return baseUV * baseST.xy + baseST.zw;
@@ -50,6 +50,11 @@ float GetSmoothness(float2 baseUV)
 float3 GetEmission(float2 baseUV)
 {
     return GetBase(baseUV).rgb;
+}
+
+float GetFresnel(float2 baseUV)
+{
+    return 0.0;
 }
 
 #endif

@@ -22,6 +22,8 @@ struct Surface
     float smoothness;
     //观察空间下的深度值(z值)
     float depth;
+    //菲涅尔强度系数
+    float fresnelStrength;
     //级联混合抖动值
     float dither;
 };

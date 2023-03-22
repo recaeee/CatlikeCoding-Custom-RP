@@ -4,6 +4,8 @@
 
 //用于获取光源信息
 #include "Packages/com.unity.render-pipelines.core/ShaderLibrary/EntityLighting.hlsl"
+//用于获取roughness对应mip level
+#include "Packages/com.unity.render-pipelines.core/ShaderLibrary/ImageBasedLighting.hlsl"
 
 //GPU接收到的光照贴图名为unity_Lightmap
 TEXTURE2D(unity_Lightmap);
@@ -16,6 +18,10 @@ SAMPLER(samplerunity_ShadowMask);
 //LPPV的3D纹理
 TEXTURE3D_FLOAT(unity_ProbeVolumeSH);
 SAMPLER(sampler_unity_ProbeVolumeSH);
+
+//环境光贴图（默认是Skybox）
+TEXTURECUBE(unity_SpecCube0);
+SAMPLER(samplerunity_SpecCube0);
 
 //使用宏定义GI数据和相关函数
 #if defined(LIGHTMAP_ON)
@@ -39,6 +45,8 @@ struct GI
 {
     //片元接收到的GI光照结果，该光照结果为光照贴图上采样得到，这部分光照能量会被全部以漫反射形式在表面反射出去。
     float3 diffuse;
+    //片元接收到的GI Specular部分，包括环境光照
+    float3 specular;
     //阴影遮罩信息，存储到GI是因为阴影遮罩属于烘培光照数据的一部分
     ShadowMask shadowMask;
 };
@@ -119,8 +127,20 @@ float3 SampleLightProbe(Surface surfaceWS)
     #endif
 }
 
+//采样环境光（高光）
+float3 SampleEnvironment(Surface surfaceWS, BRDF brdf)
+{
+    //采样贴图的uvw方向为摄像机到物体表面的出射方向
+    float3 uvw = reflect(-surfaceWS.viewDirection, surfaceWS.normal);
+    //获取roughness对应mip level
+    float mip = PerceptualRoughnessToMipmapLevel(brdf.perceptualRoughness);
+    //最后一个参数为mip level
+    float4 environment = SAMPLE_TEXTURECUBE_LOD(unity_SpecCube0, samplerunity_SpecCube0, uvw, mip);
+    return DecodeHDREnvironment(environment, unity_SpecCube0_HDR);
+}
+
 //得到片元的GI结果，传入当前片元在光照贴图上的UV，传入表面片元
-GI GetGI(float2 lightMapUV, Surface surfaceWS)
+GI GetGI(float2 lightMapUV, Surface surfaceWS, BRDF brdf)
 {
     GI gi;
     //初始化阴影遮罩信息
@@ -132,6 +152,7 @@ GI GetGI(float2 lightMapUV, Surface surfaceWS)
     //采样光照探针作为表面片元接收到GI上的diffuse光照
     //两者只得一
     gi.diffuse = SampleLightMap(lightMapUV) + SampleLightProbe(surfaceWS);
+    gi.specular = SampleEnvironment(surfaceWS, brdf);
 
     //两种阴影遮罩模式
     #if defined(_SHADOW_MASK_ALWAYS)

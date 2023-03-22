@@ -8,11 +8,13 @@ CBUFFER_START(UnityPerDraw)
 float4x4 unity_ObjectToWorld;
 float4x4 unity_WorldToObject;
 //在定义（UnityPerDraw）CBuffer时，因为Unity对一组相关数据都归到一个Feature中，即使我们没用到unity_LODFade，我们也需要放到这个CBuffer中来构造一个完整的Feature
-//如果不加这个unity_LODFade，不能支持SRP Batcher
+//unity_LODFade供LOD过渡使用，其x值表示当前过渡值（对于fade out的LOD，0代表开始fade out，1代表完全fade out；对于fade in的LOD，-1代表开始fade in，0代表完全fade in），y表示过渡值在16个区间划分内的值（不会使用到）
 float4 unity_LODFade;
 real4 unity_WorldTransformParams;
 //遮蔽探针
 float4 unity_ProbesOcclusion;
+//反射探针信息，包括使用HDR还是LDR，强度
+float4 unity_SpecCube0_HDR;
 //光照贴图uv的变换，它们定义了一个纹理展开方式。纹理展开：将Mesh的每个三角网格映射到一个二维平面(UV坐标系)
 float4 unity_LightmapST;
 float4 unity_DynamicLightmapST;

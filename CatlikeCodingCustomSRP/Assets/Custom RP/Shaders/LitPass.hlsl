@@ -64,6 +64,10 @@ float4 LitPassFragment(Varyings input) : SV_TARGET
 {
     //从input中提取实例的ID并将其存储在其他实例化宏所依赖的全局静态变量中
     UNITY_SETUP_INSTANCE_ID(input);
+    //LOD过渡
+    #if defined(LOD_FADE_CROSSFADE)
+    ClipLOD(input.positionCS.xy,unity_LODFade.x);
+    #endif
     //获取采样纹理颜色
     //通过UNITY_ACCESS_INSTANCED_PROP获取每实例数据
     float4 base = GetBase(input.baseUV);
@@ -85,6 +89,7 @@ float4 LitPassFragment(Varyings input) : SV_TARGET
     surface.alpha = base.a;
     surface.metallic = GetMetallic(input.baseUV);
     surface.smoothness = GetSmoothness(input.baseUV);
+    surface.fresnelStrength = GetFresnel(input.baseUV);
     //根据片元CS坐标计算抖动值
     surface.dither = InterleavedGradientNoise(input.positionCS.xy,0);
     #if defined(_PREMULTIPLY_ALPHA)
@@ -93,7 +98,7 @@ float4 LitPassFragment(Varyings input) : SV_TARGET
         BRDF brdf = GetBRDF(surface);
     #endif
     //传入宏定义的片元GI信息，得到烘培好的GI光照结果
-    GI gi = GetGI(GI_FRAGMENT_DATA(input), surface);
+    GI gi = GetGI(GI_FRAGMENT_DATA(input), surface, brdf);
     
     float3 color = GetLighting(surface,brdf,gi);
     //考虑自发光
