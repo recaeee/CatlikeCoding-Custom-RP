@@ -45,14 +45,16 @@ float4 UnlitPassFragment(Varyings input) : SV_TARGET
 {
     //从input中提取实例的ID并将其存储在其他实例化宏所依赖的全局静态变量中
     UNITY_SETUP_INSTANCE_ID(input);
+
+    InputConfig config = GetInputConfig(input.baseUV);
     //获取采样纹理颜色
     //通过UNITY_ACCESS_INSTANCED_PROP获取每实例数据
-    float4 base = GetBase(input.baseUV);
+    float4 base = GetBase(config);
 
     //只有在_CLIPPING关键字启用时编译该段代码
     #if defined(_CLIPPING)
     //clip函数的传入参数如果<=0则会丢弃该片元
-    clip(base.a - GetCutoff(input.baseUV));
+    clip(base.a - GetCutoff(config));
     #endif
     
     return base;

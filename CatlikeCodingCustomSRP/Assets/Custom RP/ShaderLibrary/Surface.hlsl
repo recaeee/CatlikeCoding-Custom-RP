@@ -10,6 +10,8 @@ struct Surface
     float3 position;
     //法线，在这里不明确其坐标空间，因为光照可以在任何空间下计算，在该项目中使用世界空间
     float3 normal;
+    //顶点原始法线，用于阴影贴图偏移
+    float3 interpolatedNormal;
     //观察方向：物体表面指向摄像机
     float3 viewDirection;
     //表面颜色
@@ -18,6 +20,8 @@ struct Surface
     float alpha;
     //金属度
     float metallic;
+    //遮蔽
+    float occlusion;
     //光滑度
     float smoothness;
     //观察空间下的深度值(z值)

@@ -16,17 +16,41 @@ Shader "Custom RP/Lit"
         [Toggle(_RECEIVE_SHADOWS)] _ReceiveShadows("Receive Shadows",Float) = 1
         //阴影投射模式
         [KeywordEnum(On,Clip,Dither,Off)] _Shadows("Shadows",Float) = 0
+        //是否使用MODS Map
+        [Toggle(_MASK_MAP)]_MaskMapToggle("Mask Map",Float) = 0
+        //MODS贴图 Metallic Occlusion Details Smoothness
+        [NoScaleOffset]_MaskMap("Mask (MODS)", 2D) = "white"{}
         //PBR模型下Metallic Workflow的两个物体表面参数
-        //金属度
+        //金属度系数
         _Metallic("Metallic",Range(0,1)) = 0
-        //光滑度
+        //遮蔽系数
+        _Occlusion("Occlusion",Range(0,1)) = 1
+        //光滑度系数
         _Smoothness("Smoothness",Range(0,1)) = 0.5
         //菲涅尔系数
         _Fresnel("Fresnel",Range(0,1)) = 1
+        //是否启用法线贴图
+        [Toggle(_NORMAL_MAP)]_NormalMapToggle("Normal Map", Float) = 0
+        //法线贴图，注意默认值为bump
+        [NoSacleOffset]_NormalMap("Normals",2D) = "bump"{}
+        //法线偏移系数
+        _NormalScale("Normal Scale",Range(0,1)) = 1
         //自发光纹理，使用的变换同BaseMap
         [NoScaleOffset]_EmissionMap("Emission",2D) = "white"{}
         //自发光颜色，使用HDR颜色
         [HDR]_EmissionColor("Emission",Color) = (0.0,0.0,0.0,0.0)
+        //是否使用Detail Map
+        [Toggle(_DETAIL_MAP)]_DetailMapToggle("Detail Maps",Float) = 0
+        //细节贴图，R通道存Albedo的修改，G通道存Smoothness的修改
+        _DetailMap("Details",2D) = "linearGrey"{}
+        //法线细节贴图
+        [NoScaleOffset]_DetailNormalMap("Detail Normals",2D) = "bump"{}
+        //细节贴图Albedo系数
+        _DetailAlbedo("Detail Albedo",Range(0,1)) = 1
+        //细节贴图Smoothness系数
+        _DetailSmoothness("Detail Smoothness",Range(0,1)) = 1
+        //法线细节贴图系数
+        _DetailNormalScale("Detail Normal Scale",Range(0,1)) = 1
         //Premultiply Alpha的关键字
         [Toggle(_PREMULTIPLY_ALPHA)]_PremulAlpha("Premultiply Alpha",Float) = 0
 
@@ -77,6 +101,12 @@ Shader "Custom RP/Lit"
             #pragma multi_compile _ _SHADOW_MASK_ALWAYS _SHADOW_MASK_DISTANCE
             //定义光照贴图的关键字，启用光照贴图时，Unity会自动使用开启该关键字的着色器变体
             #pragma multi_compile _ LIGHTMAP_ON
+            //是否启用法线贴图
+            #pragma shader_feature _NORMAL_MAP
+            //是否使用MODS贴图
+            #pragma shader_feature _MASK_MAP
+            //是否使用Detail Map
+            #pragma shader_feature _DETAIL_MAP
             //这一指令会让Unity生成两个该Shader的变体，一个支持GPU Instancing，另一个不支持。
             #pragma multi_compile_instancing
             //生成LOD过渡使用的变体，主Pass和阴影Pass都需要
@@ -171,15 +201,16 @@ Shader "Custom RP/Lit"
 
             float4 MetaPassFragment(Varyings input):SV_TARGET
             {
+                InputConfig config = GetInputConfig(input.baseUV);
                 //获取Diffuse
-                float4 base = GetBase(input.baseUV);
+                float4 base = GetBase(config);
                 //构造Surface
                 Surface surface;
                 //将Surface中的所有数据成员初始化为0值
                 ZERO_INITIALIZE(Surface,surface);
                 surface.color = base.rgb;
-                surface.metallic = GetMetallic(input.baseUV);
-                surface.smoothness = GetSmoothness(input.baseUV);
+                surface.metallic = GetMetallic(config);
+                surface.smoothness = GetSmoothness(config);
                 BRDF brdf = GetBRDF(surface);
                 float4 meta = 0.0;
                 //x控制漫反射
@@ -194,7 +225,7 @@ Shader "Custom RP/Lit"
                 //y控制自发光
                 else if(unity_MetaFragmentControl.y)
                 {
-                    meta = float4(GetEmission(input.baseUV),1.0);
+                    meta = float4(GetEmission(config),1.0);
                 }
                 return meta;
             }

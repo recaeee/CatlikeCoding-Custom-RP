@@ -181,7 +181,7 @@ float FilterDirectionalShadow(float3 positionSTS)
 float GetCascadedShadow(DirectionalShadowData directional, ShadowData global, Surface surfaceWS)
 {
     //计算法线偏移
-    float3 normalBias = surfaceWS.normal * (directional.normalBias * _CascadeData[global.cascadeIndex].y);
+    float3 normalBias = surfaceWS.interpolatedNormal * (directional.normalBias * _CascadeData[global.cascadeIndex].y);
     //根据对应Tile阴影变换矩阵和(经过法线偏移后)片元的世界坐标计算Tile上的像素坐标STS
     float3 positionSTS = mul(_DirectionalShadowMatrices[directional.tileIndex], float4(surfaceWS.position+normalBias,1.0)).xyz;
     //采样Tile得到阴影强度值
@@ -189,7 +189,7 @@ float GetCascadedShadow(DirectionalShadowData directional, ShadowData global, Su
     //考虑级联混合，采样下一级别的级联并混合而得到阴影强度值
     if(global.cascadeBlend < 1.0)
     {
-        normalBias = surfaceWS.normal * (directional.normalBias * _CascadeData[global.cascadeIndex + 1].y);
+        normalBias = surfaceWS.interpolatedNormal * (directional.normalBias * _CascadeData[global.cascadeIndex + 1].y);
         positionSTS = mul(_DirectionalShadowMatrices[directional.tileIndex + 1],float4(surfaceWS.position + normalBias,1.0)).xyz;
         shadow = lerp(FilterDirectionalShadow(positionSTS),shadow,global.cascadeBlend);
     }

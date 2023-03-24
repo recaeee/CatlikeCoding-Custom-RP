@@ -81,7 +81,7 @@ float3 IndirectBRDF(Surface surface, BRDF brdf, float3 diffuse, float3 specular)
     float3 reflection = specular * lerp(brdf.specular,brdf.fresnel,fresnelStrength);
     //粗糙度会减弱部分我们看到的specular反射，考虑这个因素，平方+1的目的是让低粗糙度对高光影响变小，而大粗糙度影响至多减弱一半高光强度
     reflection /= brdf.roughness * brdf.roughness + 1.0;
-    return diffuse * brdf.diffuse + reflection;
+    return (diffuse * brdf.diffuse + reflection) * surface.occlusion;
 }
 
 #endif
