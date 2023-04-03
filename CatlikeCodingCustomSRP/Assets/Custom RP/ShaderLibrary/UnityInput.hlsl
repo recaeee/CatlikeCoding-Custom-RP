@@ -11,6 +11,11 @@ float4x4 unity_WorldToObject;
 //unity_LODFade供LOD过渡使用，其x值表示当前过渡值（对于fade out的LOD，0代表开始fade out，1代表完全fade out；对于fade in的LOD，-1代表开始fade in，0代表完全fade in），y表示过渡值在16个区间划分内的值（不会使用到）
 float4 unity_LODFade;
 real4 unity_WorldTransformParams;
+//每物体光源信息
+//unity_LightData的y分量存储了该物体的有效光源总数
+real4 unity_LightData;
+//unity_LightIndices的每个分量存一个光源索引，因此每个物体至多有8个有效光源
+real4 unity_LightIndices[2];
 //遮蔽探针
 float4 unity_ProbesOcclusion;
 //反射探针信息，包括使用HDR还是LDR，强度

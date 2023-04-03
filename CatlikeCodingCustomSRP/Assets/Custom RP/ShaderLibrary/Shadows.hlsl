@@ -57,6 +57,14 @@ struct DirectionalShadowData
     int shadowMaskChannel;
 };
 
+//其他光源的阴影信息
+struct OtherShadowData
+{
+    float strength;
+    //使用的shadowMask通道索引，-1表示不使用shadowmask
+    int shadowMaskChannel;
+};
+
 //阴影遮罩信息
 struct ShadowMask
 {
@@ -260,7 +268,25 @@ float GetDirectionalShadowAttenuation(DirectionalShadowData directional, ShadowD
         shadow = MixBakedAndRealtimeShadows(global, shadow, directional.shadowMaskChannel, directional.strength);
     }
     return shadow;
-    
+}
+
+//计算阴影衰减值，返回值[0,1]，0代表阴影衰减最大（片元完全在阴影中），1代表阴影衰减最少，片元完全被光照射。而[0,1]的中间值代表片元有一部分在阴影中
+float GetOtherShadowAttenuation(OtherShadowData other, ShadowData global, Surface surfaceWS)
+{
+    #if !defined(_RECEIVE_SHADOWS)
+        return 1.0;
+    #endif
+
+    float shadow;
+    if(other.strength > 0.0)
+    {
+        shadow = GetBakedShadow(global.shadowMask, other.shadowMaskChannel, other.strength);
+    }
+    else
+    {
+        shadow = 1.0;
+    }
+    return shadow;
 }
 
 

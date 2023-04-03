@@ -107,6 +107,8 @@ Shader "Custom RP/Lit"
             #pragma shader_feature _MASK_MAP
             //是否使用Detail Map
             #pragma shader_feature _DETAIL_MAP
+            //是否使用PerObjectLights
+            #pragma multi_complie _ _LIGHTS_PER_OBJECTS
             //这一指令会让Unity生成两个该Shader的变体，一个支持GPU Instancing，另一个不支持。
             #pragma multi_compile_instancing
             //生成LOD过渡使用的变体，主Pass和阴影Pass都需要

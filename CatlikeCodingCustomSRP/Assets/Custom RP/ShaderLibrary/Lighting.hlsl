@@ -38,6 +38,21 @@ float3 GetLighting(Surface surfaceWS,BRDF brdf, GI gi)
         Light light = GetDirectionalLight(i,surfaceWS,shadowData);
         color += GetLighting(surfaceWS,brdf,light);
     }
+    //同理，累积其他光源（注意迭代变量使用不重复的j，防止shader warnings）
+    #if defined(_LIGHTS_PER_OBJECT)
+        for(int j=0;j<min(unity_LightData.y,8);j++)
+        {
+            int lightIndex = unity_LightIndices[(uint)j/4][(uint)j%4];
+            Light light = GetOtherLight(lightIndex, surfaceWS, shadowData);
+            color += GetLighting(surfaceWS, brdf, light);
+        }
+    #else
+        for(int j=0;j<GetOtherLightCount();j++)
+        {
+            Light light = GetOtherLight(j, surfaceWS, shadowData);
+            color += GetLighting(surfaceWS, brdf, light);
+        }
+    #endif
     return color;
 }
 
