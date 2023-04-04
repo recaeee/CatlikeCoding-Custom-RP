@@ -109,6 +109,8 @@ Shader "Custom RP/Lit"
             #pragma shader_feature _DETAIL_MAP
             //是否使用PerObjectLights
             #pragma multi_complie _ _LIGHTS_PER_OBJECTS
+            //其他光源使用的软阴影模式
+            #pragma multi_compile _ _OTHER_PCF3 _OTHER_PCF5 _OTHER_PCF7
             //这一指令会让Unity生成两个该Shader的变体，一个支持GPU Instancing，另一个不支持。
             #pragma multi_compile_instancing
             //生成LOD过渡使用的变体，主Pass和阴影Pass都需要
