@@ -6,7 +6,9 @@ using UnityEngine.Profiling;
 public partial class CameraRenderer
 {
     //定义分部函数的方式类似C++
-    partial void DrawGizmos();
+    partial void DrawGizmosBeforeFX();
+
+    partial void DrawGizmosAfterFX();
     partial void DrawUnsupportedShaders();
     partial void PrepareBuffer();
 
@@ -29,12 +31,20 @@ public partial class CameraRenderer
 
     private string SampleName { get; set; }
 
-    partial void DrawGizmos()
+    partial void DrawGizmosBeforeFX()
     {
         //Scene窗口中绘制Gizmos
         if (Handles.ShouldRenderGizmos())
         {
             context.DrawGizmos(camera, GizmoSubset.PreImageEffects);
+        }
+    }
+    
+    partial void DrawGizmosAfterFX()
+    {
+        //Scene窗口中绘制Gizmos
+        if (Handles.ShouldRenderGizmos())
+        {
             context.DrawGizmos(camera, GizmoSubset.PostImageEffects);
         }
     }

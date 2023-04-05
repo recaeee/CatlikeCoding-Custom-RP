@@ -28,11 +28,8 @@ float3 GetLighting(Surface surfaceWS,BRDF brdf, GI gi)
     ShadowData shadowData = GetShadowData(surfaceWS);
     //从GI中获取阴影遮罩信息
     shadowData.shadowMask = gi.shadowMask;
-    // return gi.shadowMask.shadows.rgb;
     //光照结果初始化为烘培好的gi光照结果
-    // float3 color = gi.diffuse * brdf.diffuse;
     float3 color = IndirectBRDF(surfaceWS, brdf, gi.diffuse, gi.specular);
-    color = 0.0;
     //使用循环，累积所有有效方向光源的光照计算结果
     for(int i=0;i<GetDirectionalLightCount();i++)
     {

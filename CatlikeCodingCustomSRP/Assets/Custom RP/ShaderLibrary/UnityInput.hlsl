@@ -44,5 +44,7 @@ float4x4 glstate_matrix_projection;
 
 //获取内置参数：摄像机世界空间位置
 float3 _WorldSpaceCameraPos;
+//_ProjectionParams的X分量指示我们是否需要手动反转纹理v坐标(负值表示需要反转）
+float4 _ProjectionParams;
 
 #endif

@@ -10,14 +10,18 @@ public partial class CustomRenderPipeline : RenderPipeline
     private bool useDynamicBatching, useGPUInstancing, useLightsPerObject;
     //Shadow Map配置
     private ShadowSettings shadowSettings;
+    //后处理配置
+    private PostFXSettings postFXSettings;
 
     //构造函数，初始化管线的一些属性
-    public CustomRenderPipeline(bool useDynamicBatching, bool useGPUInstancing, bool useSRPBatcher, bool useLightsPerObject, ShadowSettings shadowSettings)
+    public CustomRenderPipeline(bool useDynamicBatching, bool useGPUInstancing, bool useSRPBatcher, bool useLightsPerObject, ShadowSettings shadowSettings,
+        PostFXSettings postFXSettings)
     {
         this.useDynamicBatching = useDynamicBatching;
         this.useGPUInstancing = useGPUInstancing;
         this.shadowSettings = shadowSettings;
         this.useLightsPerObject = useLightsPerObject;
+        this.postFXSettings = postFXSettings;
         //配置SRP Batch
         GraphicsSettings.useScriptableRenderPipelineBatching = useSRPBatcher;
         //设置光源颜色为线性空间
@@ -33,7 +37,7 @@ public partial class CustomRenderPipeline : RenderPipeline
         //按顺序渲染每个摄像机
         foreach (var camera in cameras)
         {
-            renderer.Render(context, camera, useDynamicBatching, useGPUInstancing, useLightsPerObject, shadowSettings);
+            renderer.Render(context, camera, useDynamicBatching, useGPUInstancing, useLightsPerObject, shadowSettings, postFXSettings);
         }
     }
 }

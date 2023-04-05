@@ -28,10 +28,16 @@ public partial class CameraRenderer
     
     //存放光源处理类
     private Lighting lighting = new Lighting();
+    
+    //存放后处理
+    private PostFXStack postFXStack = new PostFXStack();
+
+    //将摄像机渲染目标设置为RT，而非FrameBuffer，用于后处理时读取该RT
+    private static int frameBufferId = Shader.PropertyToID("_CameraFrameBuffer");
 
     //摄像机渲染器的渲染函数，在当前渲染上下文的基础上渲染当前摄像机
     public void Render(ScriptableRenderContext context, Camera camera, bool useDynamicBatching, bool useGPUInstancing, bool useLightsPerObject
-    , ShadowSettings shadowSettings)
+    , ShadowSettings shadowSettings, PostFXSettings postFXSettings)
     {
         //设定当前上下文和摄像机
         this.context = context;
@@ -50,14 +56,23 @@ public partial class CameraRenderer
         ExecuteBuffer();
         //将光源信息传递给GPU，在其中也会完成阴影贴图的渲染
         lighting.Setup(context, cullingResults, shadowSettings, useLightsPerObject);
+        //配置后处理堆栈
+        postFXStack.Setup(context, camera, postFXSettings);
         buffer.EndSample(SampleName);
         //设置当前摄像机Render Target，准备渲染摄像机画面
         Setup();
         DrawVisibleGeometry(useDynamicBatching, useGPUInstancing, useLightsPerObject);
         DrawUnsupportedShaders();
-        DrawGizmos();
-        //完成渲染后，清理光源（包括阴影）相关内存
-        lighting.Cleanup();
+        DrawGizmosBeforeFX();
+        //执行后处理
+        if (postFXStack.IsActive)
+        {
+            postFXStack.Render(frameBufferId);
+        }
+        DrawGizmosAfterFX();
+        //释放后处理RT，完成渲染后，清理光源（包括阴影）相关内存
+        Cleanup();
+        
         Submit();
     }
 
@@ -67,6 +82,22 @@ public partial class CameraRenderer
         //同时也会设置当前的Render Target，这样ClearRenderTarget可以直接清除Render Target中的数据，而不是通过绘制一个全屏的quad来达到同样效果（比较费）
         context.SetupCameraProperties(camera);
         CameraClearFlags flags = camera.clearFlags;
+        
+        //激活后处理堆栈时，将RenderTarget设置为中间RT
+        if (postFXStack.IsActive)
+        {
+            //清理RT的颜色缓冲
+            if (flags > CameraClearFlags.Color)
+            {
+                flags = CameraClearFlags.Color;
+            }
+            //创建RT
+            buffer.GetTemporaryRT(frameBufferId, camera.pixelWidth, camera.pixelHeight,
+                32, FilterMode.Bilinear, RenderTextureFormat.Default);
+            //设置RT为RenderTarget
+            buffer.SetRenderTarget(frameBufferId, RenderBufferLoadAction.DontCare, RenderBufferStoreAction.Store);
+        }
+        
         //清除当前摄像机Render Target中的内容,包括深度和颜色，ClearRenderTarget内部会Begin/EndSample(buffer.name)
         buffer.ClearRenderTarget(flags <= CameraClearFlags.Depth, flags == CameraClearFlags.Color,
             flags == CameraClearFlags.Color ? camera.backgroundColor.linear : Color.clear);
@@ -148,5 +179,14 @@ public partial class CameraRenderer
         }
 
         return false;
+    }
+
+    void Cleanup()
+    {
+        lighting.Cleanup();
+        if (postFXStack.IsActive)
+        {
+            buffer.ReleaseTemporaryRT(frameBufferId);
+        }
     }
 }
