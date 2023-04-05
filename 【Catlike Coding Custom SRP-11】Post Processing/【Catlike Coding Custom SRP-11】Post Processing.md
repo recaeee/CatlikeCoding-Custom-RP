@@ -1,4 +1,4 @@
-# 【Catlike Coding Custom SRP学习之旅——10】Point and Spot Shadows
+# 【Catlike Coding Custom SRP学习之旅——11】Post Processing
 #### 写在前面
 本篇来到了后处理，后处理算是渲染管线比较重要的一个部分吧，通过后处理的方式，可以极大程度地提升画面效果，常见的后处理包括色调映射、Bloom、抗锯齿等等。除了一些整体的画面效果，后处理还可以用来实现描边等各类美术效果。本篇主要涉及到的内容有：后处理堆栈、Bloom效果等。
 
