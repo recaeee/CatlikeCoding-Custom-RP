@@ -14,7 +14,7 @@
 
 <div align=center>
 
-![20230404185858](https://raw.githubusercontent.com/recaeee/PicGo/main/20230404185858.png)
+![20230405113144](https://raw.githubusercontent.com/recaeee/PicGo/main/20230405113144.png)
 
 </div>
 
